@@ -1,0 +1,1137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fracture v2 — Granular Delay</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700&display=swap');
+
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    height: 100%;
+    background: #8a7050;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Quicksand', system-ui, -apple-system, sans-serif;
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  #plugin {
+    width: 900px;
+    height: 600px;
+    background:
+      repeating-linear-gradient(92deg, transparent 0%, rgba(0,0,0,0.015) 1.5%, transparent 3%),
+      repeating-linear-gradient(88deg, transparent 0%, rgba(255,255,255,0.01) 2%, transparent 4%),
+      linear-gradient(175deg, #cdb48e 0%, #c4a882 30%, #b89b72 70%, #b08e68 100%);
+    border-radius: 14px;
+    border: 3px solid #a08050;
+    box-shadow: 0 8px 32px rgba(60,40,20,0.5), 0 2px 8px rgba(60,40,20,0.3), inset 0 1px 0 rgba(255,255,255,0.15);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    position: relative;
+    user-select: none;
+  }
+
+  /* == HEADER == */
+  #header {
+    height: 50px;
+    min-height: 50px;
+    display: flex;
+    align-items: center;
+    padding: 0 18px;
+    border-bottom: 2px solid #a08050;
+    background:
+      repeating-linear-gradient(90deg, transparent 0%, rgba(0,0,0,0.02) 2%, transparent 4%),
+      linear-gradient(180deg, #c8a878 0%, #b89468 100%);
+    position: relative;
+    z-index: 10;
+  }
+
+  .logo-group { display: flex; align-items: baseline; gap: 12px; }
+
+  .plugin-title {
+    font-size: 21px;
+    font-weight: 700;
+    letter-spacing: 4px;
+    color: #3a2a1a;
+    text-transform: uppercase;
+    text-shadow: 0 1px 0 rgba(255,255,255,0.2);
+  }
+
+  .plugin-subtitle {
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 2.5px;
+    color: #7a6a5a;
+    text-transform: uppercase;
+  }
+
+  .header-right {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+
+  /* == FREEZE BUTTON == */
+  .freeze-btn {
+    width: 80px;
+    height: 32px;
+    background: linear-gradient(180deg, #d8c0a0, #c8aa88);
+    border: 2px solid #a08050;
+    border-radius: 8px;
+    color: #7a6a5a;
+    font-family: inherit;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    text-transform: uppercase;
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 2px 4px rgba(60,40,20,0.2), inset 0 1px 0 rgba(255,255,255,0.2);
+  }
+  .freeze-btn:hover { background: linear-gradient(180deg, #e0c8a8, #d0b290); color: #5a4a3a; }
+  .freeze-btn.active {
+    background: linear-gradient(180deg, #3cc068, #2a9a4e);
+    border-color: #2a8a42;
+    color: #ffffff;
+    box-shadow: 0 0 16px rgba(58,170,92,0.45), 0 2px 4px rgba(60,40,20,0.2), inset 0 1px 0 rgba(255,255,255,0.2);
+    text-shadow: 0 1px 2px rgba(0,0,0,0.2);
+  }
+  .freeze-btn.active::before {
+    content: '';
+    position: absolute;
+    inset: -2px;
+    border-radius: 8px;
+    background: radial-gradient(ellipse at center, rgba(58,170,92,0.15) 0%, transparent 70%);
+    animation: freezePulse 2s ease-in-out infinite;
+  }
+  @keyframes freezePulse {
+    0%,100% { opacity: 0.4; }
+    50% { opacity: 1; }
+  }
+
+  /* == BODY == */
+  #body {
+    flex: 1;
+    display: flex;
+    padding: 8px;
+    gap: 6px;
+    min-height: 0;
+  }
+
+  /* == SECTION PANELS == */
+  .section {
+    display: flex;
+    flex-direction: column;
+    border-radius: 12px;
+    padding: 10px 8px 8px;
+    position: relative;
+    overflow: hidden;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.12), 0 2px 6px rgba(60,40,20,0.15);
+  }
+
+  .section-label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    text-align: center;
+    margin-bottom: 8px;
+    position: relative;
+    z-index: 2;
+    text-shadow: 0 1px 0 rgba(255,255,255,0.15);
+  }
+
+  .section-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-evenly;
+    gap: 4px;
+    position: relative;
+    z-index: 2;
+  }
+
+  /* Section sizes and colors */
+  .section-delay {
+    flex: 1.0;
+    background:
+      repeating-linear-gradient(93deg, transparent 0%, rgba(0,0,0,0.01) 2%, transparent 4%),
+      linear-gradient(175deg, #ddc4a0 0%, #d4b892 100%);
+    border: 2px solid #c8a070;
+  }
+  .section-delay .section-label { color: #c04828; }
+
+  .section-grain {
+    flex: 1.3;
+    background:
+      repeating-linear-gradient(91deg, transparent 0%, rgba(0,0,0,0.01) 2%, transparent 4%),
+      linear-gradient(175deg, #ddc4a0 0%, #d4b892 100%);
+    border: 2px solid #c8a070;
+  }
+  .section-grain .section-label { color: #2a8a48; }
+
+  .section-character {
+    flex: 1.6;
+    background:
+      repeating-linear-gradient(94deg, transparent 0%, rgba(0,0,0,0.01) 2%, transparent 4%),
+      linear-gradient(175deg, #ddc4a0 0%, #d4b892 100%);
+    border: 2px solid #c8a070;
+  }
+  .section-character .section-label { color: #2a6aaa; }
+
+  .section-fracture {
+    flex: 1.7;
+    background:
+      repeating-linear-gradient(92deg, transparent 0%, rgba(0,0,0,0.01) 2%, transparent 4%),
+      linear-gradient(175deg, #e8d4b0 0%, #e0c8a0 50%, #d8c098 100%);
+    border: 2px solid #d4a040;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.15), 0 0 18px rgba(232,168,50,0.12), 0 2px 6px rgba(60,40,20,0.15);
+  }
+  .section-fracture .section-label { color: #c08820; text-shadow: 0 0 10px rgba(232,168,50,0.25), 0 1px 0 rgba(255,255,255,0.15); }
+
+  .section-mix {
+    flex: 0.8;
+    background:
+      repeating-linear-gradient(91deg, transparent 0%, rgba(0,0,0,0.01) 2%, transparent 4%),
+      linear-gradient(175deg, #ddc4a0 0%, #d4b892 100%);
+    border: 2px solid #c8a070;
+  }
+  .section-mix .section-label { color: #9a3da0; }
+
+  /* == KNOB == */
+  .knob-group {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    position: relative;
+  }
+  .knob-container {
+    width: 52px;
+    height: 52px;
+    position: relative;
+    cursor: grab;
+  }
+  .knob-container:active { cursor: grabbing; }
+  .knob-container.large { width: 60px; height: 60px; }
+
+  .knob-svg { width: 100%; height: 100%; }
+
+  .knob-track {
+    fill: none;
+    stroke: #a08060;
+    stroke-width: 3.5;
+    stroke-linecap: round;
+    opacity: 0.5;
+  }
+  .knob-fill {
+    fill: none;
+    stroke-width: 4;
+    stroke-linecap: round;
+    transition: stroke 0.15s;
+  }
+  .knob-fill.danger { stroke: #d43030 !important; filter: drop-shadow(0 0 4px rgba(212,48,48,0.5)); }
+  .knob-base {
+    fill: #f0e0cc;
+    stroke: #c8aa80;
+    stroke-width: 1.5;
+    filter: drop-shadow(0 1px 2px rgba(60,40,20,0.2));
+  }
+  .knob-indicator {
+    stroke: #3a2a1a;
+    stroke-width: 2.5;
+    stroke-linecap: round;
+  }
+
+  .knob-label {
+    font-size: 8.5px;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+    color: #6a5a4a;
+    text-transform: uppercase;
+    text-align: center;
+    white-space: nowrap;
+  }
+
+  .knob-value {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 8px;
+    font-weight: 700;
+    color: #3a2a1a;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s;
+    white-space: nowrap;
+  }
+  .knob-container:hover .knob-value,
+  .knob-container.dragging .knob-value { opacity: 1; }
+
+  .knob-row {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+  }
+
+  /* == SLIDER (vertical) == */
+  .slider-group {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+  }
+  .slider-container {
+    position: relative;
+    cursor: grab;
+  }
+  .slider-container:active { cursor: grabbing; }
+  .slider-track {
+    width: 10px;
+    border-radius: 6px;
+    background: #8a7050;
+    border: 1px solid #7a6040;
+    position: relative;
+    overflow: hidden;
+    box-shadow: inset 0 2px 4px rgba(60,40,20,0.3);
+  }
+  .slider-fill {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    border-radius: 0 0 6px 6px;
+    transition: background 0.15s;
+  }
+  .slider-thumb {
+    position: absolute;
+    left: 50%;
+    transform: translate(-50%, 50%);
+    width: 28px;
+    height: 12px;
+    background: linear-gradient(180deg, #f5e8d8, #e0d0b8);
+    border-radius: 6px;
+    border: 2px solid #a08060;
+    box-shadow: 0 2px 4px rgba(60,40,20,0.25);
+  }
+
+  .slider-label {
+    font-size: 8.5px;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+    color: #6a5a4a;
+    text-transform: uppercase;
+    text-align: center;
+  }
+  .slider-value {
+    font-size: 9px;
+    font-weight: 700;
+    color: #3a2a1a;
+    text-align: center;
+    height: 14px;
+    transition: opacity 0.15s;
+  }
+  .slider-value.hover-only {
+    opacity: 0;
+  }
+  .slider-container:hover .slider-value.hover-only,
+  .slider-container.dragging .slider-value.hover-only { opacity: 1; }
+  .slider-value.always-visible {
+    opacity: 1;
+  }
+
+  .slider-markers {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    position: absolute;
+    right: -26px;
+    top: 0;
+    bottom: 0;
+    pointer-events: none;
+  }
+  .slider-marker {
+    font-size: 7px;
+    font-weight: 700;
+    color: #8a7a6a;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+  }
+
+  /* == SEGMENTED SELECTOR == */
+  .segment-group {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    width: 100%;
+  }
+  .segment-row {
+    display: flex;
+    gap: 0;
+    background: #a08060;
+    border-radius: 8px;
+    padding: 3px;
+    border: 1px solid #8a7050;
+    box-shadow: inset 0 1px 3px rgba(60,40,20,0.2);
+  }
+  .segment-btn {
+    padding: 5px 10px;
+    font-family: inherit;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+    color: #6a5a4a;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.15s;
+    text-transform: uppercase;
+  }
+  .segment-btn:hover { color: #3a2a1a; }
+  .segment-btn.active {
+    background: #f0e0cc;
+    color: #2a8a48;
+    box-shadow: 0 1px 3px rgba(60,40,20,0.2);
+  }
+  .segment-label {
+    font-size: 8.5px;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+    color: #6a5a4a;
+    text-transform: uppercase;
+  }
+
+  /* == SYNC TOGGLE == */
+  .sync-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .sync-btn {
+    padding: 4px 14px;
+    font-family: inherit;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    color: #7a6a5a;
+    background: linear-gradient(180deg, #e0d0b8, #d0c0a0);
+    border: 2px solid #a08050;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.15s;
+    text-transform: uppercase;
+    box-shadow: 0 1px 3px rgba(60,40,20,0.15);
+  }
+  .sync-btn:hover { color: #5a4a3a; background: linear-gradient(180deg, #e8d8c0, #d8c8a8); }
+  .sync-btn.active {
+    background: linear-gradient(180deg, #f07050, #d04828);
+    border-color: #c04020;
+    color: #ffffff;
+    box-shadow: 0 0 10px rgba(224,80,50,0.3);
+    text-shadow: 0 1px 1px rgba(0,0,0,0.15);
+  }
+
+  /* == COMBO BOX == */
+  .combo-box { position: relative; }
+  .combo-btn {
+    padding: 4px 24px 4px 10px;
+    font-family: inherit;
+    font-size: 10px;
+    font-weight: 600;
+    color: #3a2a1a;
+    background: linear-gradient(180deg, #f0e0cc, #e0d0b8);
+    border: 2px solid #a08050;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.15s;
+    min-width: 60px;
+    text-align: left;
+    position: relative;
+    box-shadow: 0 1px 3px rgba(60,40,20,0.15);
+  }
+  .combo-btn::after {
+    content: '';
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 0;
+    height: 0;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 4px solid #7a6a5a;
+  }
+  .combo-btn:hover { background: linear-gradient(180deg, #f5e8d8, #e8d8c0); }
+  .combo-dropdown {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    margin-top: 3px;
+    background: #f0e0cc;
+    border: 2px solid #a08050;
+    border-radius: 8px;
+    z-index: 100;
+    max-height: 200px;
+    overflow-y: auto;
+    box-shadow: 0 6px 20px rgba(60,40,20,0.3);
+  }
+  .combo-dropdown.open { display: block; }
+  .combo-option {
+    padding: 5px 10px;
+    font-size: 10px;
+    font-weight: 500;
+    color: #5a4a3a;
+    cursor: pointer;
+    transition: all 0.1s;
+    border-radius: 4px;
+    margin: 1px 3px;
+  }
+  .combo-option:hover { background: #e0c8a0; color: #3a2a1a; }
+  .combo-option.active { color: #c04828; font-weight: 700; }
+
+  /* == FILTER SLIDERS (horizontal) == */
+  .filter-row {
+    display: flex;
+    gap: 8px;
+    width: 100%;
+    justify-content: center;
+  }
+  .filter-group {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    flex: 1;
+  }
+  .filter-slider {
+    width: 100%;
+    max-width: 80px;
+    height: 10px;
+    background: #8a7050;
+    border-radius: 6px;
+    position: relative;
+    cursor: pointer;
+    border: 1px solid #7a6040;
+    box-shadow: inset 0 1px 3px rgba(60,40,20,0.3);
+  }
+  .filter-fill {
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    background: #3a8ed6;
+    border-radius: 6px 0 0 6px;
+  }
+  .filter-thumb {
+    position: absolute;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 14px;
+    height: 14px;
+    background: linear-gradient(180deg, #f5e8d8, #e0d0b8);
+    border-radius: 50%;
+    border: 2px solid #a08060;
+    box-shadow: 0 1px 3px rgba(60,40,20,0.2);
+  }
+  .filter-label {
+    font-size: 7.5px;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+    color: #6a5a4a;
+    text-transform: uppercase;
+  }
+  .filter-value {
+    font-size: 8px;
+    font-weight: 600;
+    color: #5a4a3a;
+    height: 12px;
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+  .filter-group:hover .filter-value,
+  .filter-group.dragging .filter-value { opacity: 1; }
+
+  /* == Section divider == */
+  .section-divider {
+    width: 80%;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, #b09070, transparent);
+    margin: 2px 0;
+  }
+
+  /* == Fracture section specials == */
+  .section-fracture .slider-fill {
+    background: linear-gradient(0deg, #e8a832, #f0c040);
+    box-shadow: 0 0 8px rgba(232,168,50,0.3);
+  }
+
+  /* == Scrollbar == */
+  .combo-dropdown::-webkit-scrollbar { width: 5px; }
+  .combo-dropdown::-webkit-scrollbar-track { background: transparent; }
+  .combo-dropdown::-webkit-scrollbar-thumb { background: #b09070; border-radius: 3px; }
+
+  /* fracture column layout */
+  .fracture-content {
+    display: flex;
+    gap: 6px;
+    align-items: flex-start;
+    justify-content: center;
+    flex: 1;
+    width: 100%;
+  }
+</style>
+</head>
+<body>
+<div id="plugin">
+  <!-- HEADER -->
+  <div id="header">
+    <div class="logo-group">
+      <span class="plugin-title">Fracture</span>
+      <span class="plugin-subtitle">Granular Delay</span>
+    </div>
+    <div class="header-right">
+      <button class="freeze-btn" id="freezeBtn">FREEZE</button>
+    </div>
+  </div>
+
+  <!-- BODY -->
+  <div id="body">
+
+    <!-- DELAY SECTION -->
+    <div class="section section-delay">
+      <div class="section-label">Delay</div>
+      <div class="section-content">
+        <div class="knob-group">
+          <div class="knob-container" id="knob-delay_time" data-min="1" data-max="2000" data-value="250" data-unit="ms" data-log="true" data-color="#e85d3a" data-default="250">
+            <svg class="knob-svg" viewBox="0 0 52 52"></svg>
+            <div class="knob-value">250 ms</div>
+          </div>
+          <div class="knob-label">Time</div>
+        </div>
+        <div class="sync-row">
+          <button class="sync-btn" id="syncBtn">SYNC</button>
+        </div>
+        <div class="combo-box" id="syncCombo" style="display:none;">
+          <button class="combo-btn" id="comboBtn">1/4</button>
+          <div class="combo-dropdown" id="comboDropdown"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- GRAIN SECTION -->
+    <div class="section section-grain">
+      <div class="section-label">Grain</div>
+      <div class="section-content">
+        <div class="knob-row">
+          <div class="knob-group">
+            <div class="knob-container" id="knob-grain_size" data-min="5" data-max="500" data-value="80" data-unit="ms" data-log="true" data-color="#3aaa5c" data-default="80">
+              <svg class="knob-svg" viewBox="0 0 52 52"></svg>
+              <div class="knob-value">80 ms</div>
+            </div>
+            <div class="knob-label">Size</div>
+          </div>
+          <div class="knob-group">
+            <div class="knob-container" id="knob-grain_rate" data-min="0.1" data-max="100" data-value="10" data-unit="Hz" data-log="true" data-color="#3aaa5c" data-default="10">
+              <svg class="knob-svg" viewBox="0 0 52 52"></svg>
+              <div class="knob-value">10 Hz</div>
+            </div>
+            <div class="knob-label">Rate</div>
+          </div>
+        </div>
+        <div class="section-divider"></div>
+        <div class="segment-group">
+          <div class="segment-label">Shape</div>
+          <div class="segment-row" id="shapeSelector">
+            <button class="segment-btn active" data-val="sine">SIN</button>
+            <button class="segment-btn" data-val="triangle">TRI</button>
+            <button class="segment-btn" data-val="square">SQR</button>
+            <button class="segment-btn" data-val="ramp">RMP</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CHARACTER SECTION -->
+    <div class="section section-character">
+      <div class="section-label">Character</div>
+      <div class="section-content">
+        <div class="knob-row">
+          <div class="knob-group">
+            <div class="knob-container" id="knob-feedback" data-min="0" data-max="120" data-value="40" data-unit="%" data-warn="100" data-color="#3a8ed6" data-default="40">
+              <svg class="knob-svg" viewBox="0 0 52 52"></svg>
+              <div class="knob-value">40%</div>
+            </div>
+            <div class="knob-label">Feedback</div>
+          </div>
+          <div class="knob-group">
+            <div class="knob-container" id="knob-diffusion" data-min="0" data-max="100" data-value="30" data-unit="%" data-color="#3a8ed6" data-default="30">
+              <svg class="knob-svg" viewBox="0 0 52 52"></svg>
+              <div class="knob-value">30%</div>
+            </div>
+            <div class="knob-label">Diffusion</div>
+          </div>
+        </div>
+        <div class="knob-row">
+          <div class="knob-group">
+            <div class="knob-container" id="knob-spread" data-min="0" data-max="100" data-value="50" data-unit="%" data-color="#3a8ed6" data-default="50">
+              <svg class="knob-svg" viewBox="0 0 52 52"></svg>
+              <div class="knob-value">50%</div>
+            </div>
+            <div class="knob-label">Spread</div>
+          </div>
+          <div class="knob-group">
+            <div class="knob-container" id="knob-detune" data-min="-50" data-max="50" data-value="0" data-unit="ct" data-bipolar="true" data-color="#3a8ed6" data-default="0">
+              <svg class="knob-svg" viewBox="0 0 52 52"></svg>
+              <div class="knob-value">0 ct</div>
+            </div>
+            <div class="knob-label">Detune</div>
+          </div>
+        </div>
+        <div class="section-divider"></div>
+        <div class="filter-row">
+          <div class="filter-group">
+            <div class="filter-label">Lo Cut</div>
+            <div class="filter-slider" id="filter-locut" data-min="20" data-max="5000" data-value="20" data-unit="Hz" data-log="true">
+              <div class="filter-fill"></div>
+              <div class="filter-thumb"></div>
+            </div>
+            <div class="filter-value">20 Hz</div>
+          </div>
+          <div class="filter-group">
+            <div class="filter-label">Hi Cut</div>
+            <div class="filter-slider" id="filter-hicut" data-min="200" data-max="20000" data-value="20000" data-unit="Hz" data-log="true">
+              <div class="filter-fill"></div>
+              <div class="filter-thumb"></div>
+            </div>
+            <div class="filter-value">20.0 kHz</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- FRACTURE SECTION -->
+    <div class="section section-fracture">
+      <div class="section-label">Fracture</div>
+      <div class="section-content">
+        <div class="fracture-content">
+          <div class="slider-group">
+            <div class="slider-value hover-only" style="height:14px;">&nbsp;</div>
+            <div class="slider-container" id="slider-reverse" data-min="0" data-max="100" data-value="0" data-unit="%" data-color="#e8a832" data-default="0">
+              <div class="slider-track" style="height:180px;">
+                <div class="slider-fill" style="background: linear-gradient(0deg, #e8a832, #f0c040);"></div>
+              </div>
+              <div class="slider-thumb"></div>
+              <div class="slider-markers">
+                <span class="slider-marker">REV</span>
+                <span class="slider-marker">FWD</span>
+              </div>
+            </div>
+            <div class="slider-label">Reverse</div>
+            <div class="slider-value hover-only">0%</div>
+          </div>
+          <div style="display:flex; flex-direction:column; gap:10px; align-items:center; justify-content:center; flex:1; padding-top:14px;">
+            <div class="knob-group">
+              <div class="knob-container large" id="knob-mutation" data-min="0" data-max="100" data-value="0" data-unit="%" data-color="#e8a832" data-default="0">
+                <svg class="knob-svg" viewBox="0 0 60 60"></svg>
+                <div class="knob-value">0%</div>
+              </div>
+              <div class="knob-label">Mutation</div>
+            </div>
+            <div class="knob-group">
+              <div class="knob-container large" id="knob-freqspread" data-min="0" data-max="100" data-value="0" data-unit="%" data-color="#e8a832" data-default="0">
+                <svg class="knob-svg" viewBox="0 0 60 60"></svg>
+                <div class="knob-value">0%</div>
+              </div>
+              <div class="knob-label">Freq Spread</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- MIX SECTION -->
+    <div class="section section-mix">
+      <div class="section-label">Mix</div>
+      <div class="section-content" style="justify-content:center; align-items:center;">
+        <div class="slider-group">
+          <div class="slider-value always-visible" style="height:14px;">50%</div>
+          <div class="slider-container" id="slider-drywet" data-min="0" data-max="100" data-value="50" data-unit="%" data-color="#b55dba" data-default="50" data-always-show="true">
+            <div class="slider-track" style="height:280px;">
+              <div class="slider-fill" style="background: linear-gradient(0deg, #b55dba, #d070d8);"></div>
+            </div>
+            <div class="slider-thumb"></div>
+            <div class="slider-markers">
+              <span class="slider-marker">WET</span>
+              <span class="slider-marker">DRY</span>
+            </div>
+          </div>
+          <div class="slider-label">Dry / Wet</div>
+          <div class="slider-value always-visible">50%</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+(function() {
+  'use strict';
+
+  // == KNOB RENDERING & INTERACTION ==
+  // Correct audio-standard rotation:
+  // Min at 7 o'clock (225 deg), max at 5 o'clock (315 deg via 225+270=495 mapped)
+  // Dead zone at bottom (6 o'clock).
+  // In SVG convention, 0 deg = 12 o'clock (top), clockwise positive.
+  // Arc goes from 225 deg (7 o'clock) clockwise to 315 deg (5 o'clock) = 270 deg sweep
+  // We go 225 -> 360 -> 315, i.e., start=225, end=225+270=495 in continuous angle space
+
+  const ARC_START = 225;  // 7 o'clock
+  const ARC_SWEEP = 270;  // total sweep degrees
+  const ARC_END = ARC_START + ARC_SWEEP; // 495 (equivalent to 135/315 via wrap)
+
+  function polarToCart(cx, cy, r, angleDeg) {
+    // 0 deg = 12 o'clock (top), clockwise positive
+    const rad = (angleDeg - 90) * Math.PI / 180;
+    return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
+  }
+
+  function describeArc(cx, cy, r, startAngle, endAngle) {
+    const s = polarToCart(cx, cy, r, startAngle);
+    const e = polarToCart(cx, cy, r, endAngle);
+    const sweep = endAngle - startAngle;
+    const large = Math.abs(sweep) > 180 ? 1 : 0;
+    return `M ${s.x} ${s.y} A ${r} ${r} 0 ${large} 1 ${e.x} ${e.y}`;
+  }
+
+  function renderKnob(el) {
+    const svg = el.querySelector('.knob-svg');
+    const vb = svg.getAttribute('viewBox').split(' ');
+    const size = parseFloat(vb[2]);
+    const cx = size / 2, cy = size / 2;
+    const r = size / 2 - 6;
+    const baseR = size / 2 - 10;
+    const indR = r - 4;
+
+    const min = parseFloat(el.dataset.min);
+    const max = parseFloat(el.dataset.max);
+    const val = parseFloat(el.dataset.value);
+    const bipolar = el.dataset.bipolar === 'true';
+    const warn = el.dataset.warn ? parseFloat(el.dataset.warn) : null;
+    const isLog = el.dataset.log === 'true';
+    const color = el.dataset.color || '#e85d3a';
+
+    let norm;
+    if (isLog) {
+      const logMin = Math.log(Math.max(min, 0.001));
+      const logMax = Math.log(max);
+      const logVal = Math.log(Math.max(val, 0.001));
+      norm = (logVal - logMin) / (logMax - logMin);
+    } else {
+      norm = (val - min) / (max - min);
+    }
+    norm = Math.max(0, Math.min(1, norm));
+
+    const angle = ARC_START + norm * ARC_SWEEP;
+
+    let html = '';
+    // Track arc (full background arc)
+    html += `<path d="${describeArc(cx, cy, r, ARC_START, ARC_END)}" class="knob-track"/>`;
+
+    // Fill arc
+    if (bipolar) {
+      const centerAngle = ARC_START + 0.5 * ARC_SWEEP;
+      if (val > 0) {
+        html += `<path d="${describeArc(cx, cy, r, centerAngle, angle)}" class="knob-fill" style="stroke:${color}; filter:drop-shadow(0 0 3px ${color}66);"/>`;
+      } else if (val < 0) {
+        html += `<path d="${describeArc(cx, cy, r, angle, centerAngle)}" class="knob-fill" style="stroke:${color}; filter:drop-shadow(0 0 3px ${color}66);"/>`;
+      }
+    } else {
+      const danger = warn !== null && val > warn;
+      if (norm > 0.005) {
+        const fillEnd = ARC_START + Math.max(norm, 0.01) * ARC_SWEEP;
+        html += `<path d="${describeArc(cx, cy, r, ARC_START, fillEnd)}" class="knob-fill${danger ? ' danger' : ''}" style="${danger ? '' : 'stroke:' + color + '; filter:drop-shadow(0 0 3px ' + color + '66);'}"/>`;
+      }
+    }
+
+    // Base circle (the wooden knob cap)
+    html += `<circle cx="${cx}" cy="${cy}" r="${baseR}" class="knob-base"/>`;
+
+    // Indicator line
+    const ind = polarToCart(cx, cy, indR, angle);
+    const indInner = polarToCart(cx, cy, baseR * 0.4, angle);
+    html += `<line x1="${indInner.x}" y1="${indInner.y}" x2="${ind.x}" y2="${ind.y}" class="knob-indicator"/>`;
+
+    svg.innerHTML = html;
+  }
+
+  function formatVal(val, unit, isLog) {
+    if (unit === 'Hz' && val >= 1000) return (val / 1000).toFixed(1) + ' kHz';
+    if (unit === 'Hz') return Math.round(val) + ' Hz';
+    if (unit === 'ms') return Math.round(val) + ' ms';
+    if (unit === '%') return Math.round(val) + '%';
+    if (unit === 'ct') return (val > 0 ? '+' : '') + Math.round(val) + ' ct';
+    return Math.round(val * 10) / 10 + (unit ? ' ' + unit : '');
+  }
+
+  function updateKnobValue(el) {
+    const val = parseFloat(el.dataset.value);
+    const unit = el.dataset.unit || '';
+    const display = el.querySelector('.knob-value');
+    if (display) display.textContent = formatVal(val, unit, false);
+  }
+
+  // Initialize all knobs
+  document.querySelectorAll('.knob-container').forEach(el => {
+    renderKnob(el);
+    updateKnobValue(el);
+  });
+
+  // Knob drag
+  let activeKnob = null, knobStartY, knobStartVal;
+  document.addEventListener('mousedown', e => {
+    const knob = e.target.closest('.knob-container');
+    if (!knob) return;
+    e.preventDefault();
+    activeKnob = knob;
+    knob.classList.add('dragging');
+    knobStartY = e.clientY;
+    knobStartVal = parseFloat(knob.dataset.value);
+  });
+  document.addEventListener('mousemove', e => {
+    if (!activeKnob) return;
+    const min = parseFloat(activeKnob.dataset.min);
+    const max = parseFloat(activeKnob.dataset.max);
+    const isLog = activeKnob.dataset.log === 'true';
+    const sensitivity = e.shiftKey ? 600 : 150;
+    const dy = knobStartY - e.clientY; // UP = positive = increase
+
+    let newVal;
+    if (isLog) {
+      const logMin = Math.log(Math.max(min, 0.001));
+      const logMax = Math.log(max);
+      const startNorm = (Math.log(Math.max(knobStartVal, 0.001)) - logMin) / (logMax - logMin);
+      const newNorm = Math.max(0, Math.min(1, startNorm + dy / sensitivity));
+      newVal = Math.exp(logMin + newNorm * (logMax - logMin));
+    } else {
+      const range = max - min;
+      newVal = knobStartVal + (dy / sensitivity) * range;
+    }
+
+    newVal = Math.max(min, Math.min(max, newVal));
+    activeKnob.dataset.value = newVal;
+    renderKnob(activeKnob);
+    updateKnobValue(activeKnob);
+  });
+  document.addEventListener('mouseup', () => {
+    if (activeKnob) activeKnob.classList.remove('dragging');
+    activeKnob = null;
+  });
+
+  // Double-click reset
+  document.querySelectorAll('.knob-container').forEach(el => {
+    el.addEventListener('dblclick', () => {
+      const def = el.dataset.default;
+      if (def !== undefined) {
+        el.dataset.value = def;
+      } else {
+        el.dataset.value = el.dataset.bipolar === 'true' ? 0 : el.dataset.min;
+      }
+      renderKnob(el);
+      updateKnobValue(el);
+    });
+  });
+
+  // == VERTICAL SLIDERS ==
+  function initSlider(container) {
+    const track = container.querySelector('.slider-track');
+    const fill = container.querySelector('.slider-fill');
+    const thumb = container.querySelector('.slider-thumb');
+    const group = container.closest('.slider-group');
+    const valEls = group.querySelectorAll('.slider-value');
+    const min = parseFloat(container.dataset.min);
+    const max = parseFloat(container.dataset.max);
+    const unit = container.dataset.unit || '';
+    const trackH = track.offsetHeight;
+
+    function update() {
+      const val = parseFloat(container.dataset.value);
+      const norm = (val - min) / (max - min);
+      const px = norm * trackH;
+      fill.style.height = px + 'px';
+      thumb.style.bottom = (px - 5) + 'px';
+      const txt = formatVal(val, unit, false);
+      valEls.forEach(v => v.textContent = txt);
+    }
+    update();
+
+    let dragging = false, startY, startVal;
+    container.addEventListener('mousedown', e => {
+      e.preventDefault();
+      dragging = true;
+      container.classList.add('dragging');
+      startY = e.clientY;
+      startVal = parseFloat(container.dataset.value);
+      const onMove = ev => {
+        if (!dragging) return;
+        const sens = ev.shiftKey ? 600 : 200;
+        const dy = startY - ev.clientY;
+        const newVal = Math.max(min, Math.min(max, startVal + (dy / sens) * (max - min)));
+        container.dataset.value = newVal;
+        update();
+      };
+      const onUp = () => {
+        dragging = false;
+        container.classList.remove('dragging');
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+      };
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+
+    // Double-click reset
+    container.addEventListener('dblclick', () => {
+      const def = container.dataset.default;
+      if (def !== undefined) container.dataset.value = def;
+      update();
+    });
+  }
+
+  document.querySelectorAll('.slider-container').forEach(initSlider);
+
+  // == FILTER SLIDERS (horizontal) ==
+  document.querySelectorAll('.filter-slider').forEach(el => {
+    const fill = el.querySelector('.filter-fill');
+    const thumb = el.querySelector('.filter-thumb');
+    const valEl = el.closest('.filter-group').querySelector('.filter-value');
+    const min = parseFloat(el.dataset.min);
+    const max = parseFloat(el.dataset.max);
+    const isLog = el.dataset.log === 'true';
+    const unit = el.dataset.unit || '';
+
+    function update() {
+      const val = parseFloat(el.dataset.value);
+      const w = el.offsetWidth;
+      let norm;
+      if (isLog) {
+        const logMin = Math.log(min);
+        const logMax = Math.log(max);
+        norm = (Math.log(val) - logMin) / (logMax - logMin);
+      } else {
+        norm = (val - min) / (max - min);
+      }
+      norm = Math.max(0, Math.min(1, norm));
+      fill.style.width = (norm * 100) + '%';
+      thumb.style.left = (norm * w) + 'px';
+      valEl.textContent = formatVal(val, unit, isLog);
+    }
+    // Defer to get correct width
+    requestAnimationFrame(update);
+
+    let dragging = false, startX, startVal;
+    el.addEventListener('mousedown', e => {
+      e.preventDefault();
+      dragging = true;
+      el.closest('.filter-group').classList.add('dragging');
+      startX = e.clientX;
+      startVal = parseFloat(el.dataset.value);
+      const onMove = ev => {
+        if (!dragging) return;
+        const dx = ev.clientX - startX;
+        const sens = ev.shiftKey ? 400 : 100;
+        if (isLog) {
+          const logMin = Math.log(min);
+          const logMax = Math.log(max);
+          const startNorm = (Math.log(startVal) - logMin) / (logMax - logMin);
+          const newNorm = Math.max(0, Math.min(1, startNorm + dx / sens));
+          el.dataset.value = Math.exp(logMin + newNorm * (logMax - logMin));
+        } else {
+          el.dataset.value = Math.max(min, Math.min(max, startVal + (dx / sens) * (max - min)));
+        }
+        update();
+      };
+      const onUp = () => {
+        dragging = false;
+        el.closest('.filter-group').classList.remove('dragging');
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+      };
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+
+    // Double-click reset
+    el.addEventListener('dblclick', () => {
+      if (el.id === 'filter-locut') el.dataset.value = 20;
+      if (el.id === 'filter-hicut') el.dataset.value = 20000;
+      update();
+    });
+  });
+
+  // == FREEZE BUTTON ==
+  document.getElementById('freezeBtn').addEventListener('click', function() {
+    this.classList.toggle('active');
+  });
+
+  // == SYNC TOGGLE ==
+  const syncBtn = document.getElementById('syncBtn');
+  const syncCombo = document.getElementById('syncCombo');
+  syncBtn.addEventListener('click', function() {
+    this.classList.toggle('active');
+    syncCombo.style.display = this.classList.contains('active') ? 'block' : 'none';
+  });
+
+  // == COMBO BOX ==
+  const divisions = ['1/1','1/1D','1/1T','1/2','1/2D','1/2T','1/4','1/4D','1/4T','1/8','1/8D','1/8T','1/16','1/16D','1/16T','1/32','1/32D','1/32T'];
+  const comboBtn = document.getElementById('comboBtn');
+  const dropdown = document.getElementById('comboDropdown');
+  let currentDiv = '1/4';
+
+  divisions.forEach(d => {
+    const opt = document.createElement('div');
+    opt.className = 'combo-option' + (d === currentDiv ? ' active' : '');
+    opt.textContent = d;
+    opt.addEventListener('click', () => {
+      currentDiv = d;
+      comboBtn.textContent = d;
+      dropdown.querySelectorAll('.combo-option').forEach(o => o.classList.remove('active'));
+      opt.classList.add('active');
+      dropdown.classList.remove('open');
+    });
+    dropdown.appendChild(opt);
+  });
+
+  comboBtn.addEventListener('click', e => {
+    e.stopPropagation();
+    dropdown.classList.toggle('open');
+  });
+  document.addEventListener('click', () => dropdown.classList.remove('open'));
+
+  // == SHAPE SELECTOR ==
+  document.querySelectorAll('#shapeSelector .segment-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+      document.querySelectorAll('#shapeSelector .segment-btn').forEach(b => b.classList.remove('active'));
+      this.classList.add('active');
+    });
+  });
+
+})();
+</script>
+</body>
+</html>

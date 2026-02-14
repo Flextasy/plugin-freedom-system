@@ -1,0 +1,1089 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fracture — Granular Delay</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500;600;700&display=swap');
+
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    height: 100%;
+    background: #050810;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  #plugin {
+    width: 900px;
+    height: 600px;
+    background: linear-gradient(170deg, #0d1218 0%, #0a0e14 40%, #0b1018 100%);
+    border-radius: 8px;
+    border: 1px solid #1a2436;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.7), 0 0 1px rgba(79,195,247,0.1);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    position: relative;
+    user-select: none;
+  }
+
+  /* ── HEADER ── */
+  #header {
+    height: 52px;
+    min-height: 52px;
+    display: flex;
+    align-items: center;
+    padding: 0 24px;
+    border-bottom: 1px solid #141e2c;
+    background: linear-gradient(180deg, #0d1219 0%, #0a0e14 100%);
+    position: relative;
+    z-index: 10;
+  }
+
+  .logo-group { display: flex; align-items: baseline; gap: 14px; }
+
+  .plugin-title {
+    font-size: 18px;
+    font-weight: 200;
+    letter-spacing: 6px;
+    color: #e0e8f0;
+    text-transform: uppercase;
+  }
+
+  .plugin-subtitle {
+    font-size: 9px;
+    font-weight: 400;
+    letter-spacing: 3px;
+    color: #3a4a5a;
+    text-transform: uppercase;
+  }
+
+  .header-right {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  /* ── FREEZE BUTTON ── */
+  .freeze-btn {
+    width: 76px;
+    height: 30px;
+    background: #111924;
+    border: 1px solid #1e2a3a;
+    border-radius: 4px;
+    color: #4a5a6a;
+    font-family: inherit;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 2.5px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    text-transform: uppercase;
+    position: relative;
+    overflow: hidden;
+  }
+  .freeze-btn:hover { border-color: #2a3a4a; color: #7a8a9a; }
+  .freeze-btn.active {
+    background: #001a2a;
+    border-color: #00e5ff;
+    color: #00e5ff;
+    box-shadow: 0 0 14px rgba(0,229,255,0.35), inset 0 0 12px rgba(0,229,255,0.08);
+    text-shadow: 0 0 8px rgba(0,229,255,0.5);
+  }
+  .freeze-btn.active::before {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    border-radius: 4px;
+    background: radial-gradient(ellipse at center, rgba(0,229,255,0.08) 0%, transparent 70%);
+    animation: freezePulse 2s ease-in-out infinite;
+  }
+  @keyframes freezePulse {
+    0%,100% { opacity: 0.5; }
+    50% { opacity: 1; }
+  }
+
+  /* ── BODY ── */
+  #body {
+    flex: 1;
+    display: flex;
+    padding: 10px;
+    gap: 6px;
+    min-height: 0;
+  }
+
+  /* ── SECTION PANELS ── */
+  .section {
+    display: flex;
+    flex-direction: column;
+    background: #121a26;
+    border-radius: 6px;
+    border: 1px solid #1a2232;
+    padding: 14px 10px 10px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .section-label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 2.5px;
+    color: #4fc3f7;
+    text-transform: uppercase;
+    text-align: center;
+    margin-bottom: 14px;
+    position: relative;
+    z-index: 2;
+  }
+
+  .section-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    position: relative;
+    z-index: 2;
+  }
+
+  .section-delay { width: 130px; }
+  .section-grain { width: 172px; }
+  .section-character { width: 210px; }
+  .section-fracture {
+    width: 228px;
+    background: linear-gradient(170deg, #151e32 0%, #121a2c 50%, #10182a 100%);
+    border-color: rgba(79,195,247,0.15);
+    box-shadow: 0 0 20px rgba(79,195,247,0.04), inset 0 0 30px rgba(79,195,247,0.02);
+  }
+  .section-fracture .section-label { color: #6ad4ff; text-shadow: 0 0 10px rgba(79,195,247,0.3); }
+  .section-mix { width: 110px; }
+
+  /* Fracture crystalline overlay */
+  .section-fracture::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+      linear-gradient(127deg, rgba(79,195,247,0.03) 0%, transparent 40%),
+      linear-gradient(220deg, transparent 50%, rgba(79,195,247,0.02) 80%, transparent 90%),
+      linear-gradient(45deg, transparent 30%, rgba(255,255,255,0.01) 31%, transparent 32%),
+      linear-gradient(135deg, transparent 55%, rgba(255,255,255,0.008) 56%, transparent 57%),
+      linear-gradient(80deg, transparent 70%, rgba(79,195,247,0.015) 71%, transparent 72%),
+      linear-gradient(160deg, transparent 20%, rgba(255,255,255,0.006) 21%, transparent 22%),
+      linear-gradient(200deg, transparent 40%, rgba(79,195,247,0.01) 41%, transparent 42%);
+    pointer-events: none;
+    border-radius: 6px;
+    z-index: 1;
+  }
+  .section-fracture::after {
+    content: '';
+    position: absolute;
+    top: -1px; left: -1px; right: -1px; bottom: -1px;
+    border-radius: 6px;
+    border: 1px solid rgba(79,195,247,0.1);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* ── KNOB ── */
+  .knob-group {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    position: relative;
+  }
+  .knob-container {
+    width: 48px;
+    height: 48px;
+    position: relative;
+    cursor: grab;
+  }
+  .knob-container:active { cursor: grabbing; }
+  .knob-container.large { width: 54px; height: 54px; }
+
+  .knob-svg { width: 100%; height: 100%; }
+
+  .knob-track {
+    fill: none;
+    stroke: #0c1018;
+    stroke-width: 3.5;
+    stroke-linecap: round;
+  }
+  .knob-fill {
+    fill: none;
+    stroke: #4fc3f7;
+    stroke-width: 3.5;
+    stroke-linecap: round;
+    transition: stroke 0.15s;
+    filter: drop-shadow(0 0 3px rgba(79,195,247,0.3));
+  }
+  .knob-container:hover .knob-fill { stroke: #81d4fa; filter: drop-shadow(0 0 6px rgba(79,195,247,0.45)); }
+  .knob-fill.bipolar-neg { stroke: #4fc3f7; }
+  .knob-fill.danger { stroke: #ff6b6b; filter: drop-shadow(0 0 3px rgba(255,107,107,0.4)); }
+  .knob-base {
+    fill: #141c28;
+    stroke: #1e2a3a;
+    stroke-width: 1;
+  }
+  .knob-indicator {
+    stroke: #e0e8f0;
+    stroke-width: 2;
+    stroke-linecap: round;
+    filter: drop-shadow(0 0 2px rgba(224,232,240,0.3));
+  }
+
+  .knob-label {
+    font-size: 8.5px;
+    font-weight: 500;
+    letter-spacing: 1px;
+    color: #556070;
+    text-transform: uppercase;
+    text-align: center;
+    white-space: nowrap;
+  }
+
+  .knob-value {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 9px;
+    font-weight: 500;
+    color: #c0cad8;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s;
+    text-shadow: 0 1px 4px rgba(0,0,0,0.8);
+    white-space: nowrap;
+  }
+  .knob-container:hover .knob-value,
+  .knob-container.dragging .knob-value { opacity: 1; }
+
+  .knob-row {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+  }
+
+  /* ── SLIDER ── */
+  .slider-group {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+  }
+  .slider-container {
+    position: relative;
+    cursor: grab;
+  }
+  .slider-container:active { cursor: grabbing; }
+  .slider-track {
+    width: 6px;
+    border-radius: 3px;
+    background: #0c1018;
+    border: 1px solid #141c28;
+    position: relative;
+    overflow: hidden;
+  }
+  .slider-fill {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: linear-gradient(0deg, #4fc3f7, #3aa8d8);
+    border-radius: 0 0 3px 3px;
+    transition: background 0.15s;
+    box-shadow: 0 0 6px rgba(79,195,247,0.25);
+  }
+  .slider-thumb {
+    position: absolute;
+    left: 50%;
+    transform: translate(-50%, 50%);
+    width: 22px;
+    height: 7px;
+    background: linear-gradient(180deg, #e0e8f0, #c0cad8);
+    border-radius: 3px;
+    border: 1px solid rgba(79,195,247,0.4);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.5);
+  }
+  .slider-container:hover .slider-thumb { border-color: rgba(79,195,247,0.7); box-shadow: 0 0 8px rgba(79,195,247,0.25); }
+
+  .slider-label {
+    font-size: 8.5px;
+    font-weight: 500;
+    letter-spacing: 1px;
+    color: #556070;
+    text-transform: uppercase;
+    text-align: center;
+  }
+  .slider-value {
+    font-size: 9px;
+    font-weight: 500;
+    color: #c0cad8;
+    text-align: center;
+    opacity: 0;
+    transition: opacity 0.15s;
+    height: 13px;
+  }
+  .slider-container:hover .slider-value,
+  .slider-container.dragging .slider-value { opacity: 1; }
+
+  .slider-markers {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    position: absolute;
+    right: -24px;
+    top: 0;
+    bottom: 0;
+    pointer-events: none;
+  }
+  .slider-marker {
+    font-size: 7px;
+    font-weight: 400;
+    color: #3a4a5a;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+  }
+
+  /* ── SEGMENTED SELECTOR ── */
+  .segment-group {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+  }
+  .segment-row {
+    display: flex;
+    gap: 2px;
+    background: #0c1018;
+    border-radius: 4px;
+    padding: 2px;
+    border: 1px solid #141c28;
+  }
+  .segment-btn {
+    padding: 4px 9px;
+    font-family: inherit;
+    font-size: 8px;
+    font-weight: 600;
+    letter-spacing: 1px;
+    color: #4a5a6a;
+    background: transparent;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: all 0.15s;
+    text-transform: uppercase;
+  }
+  .segment-btn:hover { color: #7a8a9a; }
+  .segment-btn.active {
+    background: #182030;
+    color: #4fc3f7;
+    box-shadow: 0 0 8px rgba(79,195,247,0.15);
+  }
+  .segment-label {
+    font-size: 8.5px;
+    font-weight: 500;
+    letter-spacing: 1px;
+    color: #556070;
+    text-transform: uppercase;
+  }
+
+  /* ── SYNC TOGGLE ── */
+  .sync-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .sync-btn {
+    padding: 3px 10px;
+    font-family: inherit;
+    font-size: 8px;
+    font-weight: 600;
+    letter-spacing: 1.5px;
+    color: #4a5a6a;
+    background: #0c1018;
+    border: 1px solid #1a2232;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: all 0.15s;
+    text-transform: uppercase;
+  }
+  .sync-btn:hover { color: #7a8a9a; border-color: #2a3444; }
+  .sync-btn.active {
+    background: #0f1a28;
+    border-color: #4fc3f7;
+    color: #4fc3f7;
+    box-shadow: 0 0 8px rgba(79,195,247,0.2);
+  }
+
+  /* ── COMBO BOX ── */
+  .combo-box {
+    position: relative;
+  }
+  .combo-btn {
+    padding: 3px 22px 3px 8px;
+    font-family: inherit;
+    font-size: 9px;
+    font-weight: 500;
+    color: #c0cad8;
+    background: #0c1018;
+    border: 1px solid #1a2232;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: all 0.15s;
+    min-width: 54px;
+    text-align: left;
+    position: relative;
+  }
+  .combo-btn::after {
+    content: '';
+    position: absolute;
+    right: 7px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 0;
+    height: 0;
+    border-left: 3px solid transparent;
+    border-right: 3px solid transparent;
+    border-top: 3.5px solid #4a5a6a;
+  }
+  .combo-btn:hover { border-color: #2a3444; }
+  .combo-dropdown {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    margin-top: 2px;
+    background: #0c1018;
+    border: 1px solid #1a2232;
+    border-radius: 3px;
+    z-index: 100;
+    max-height: 180px;
+    overflow-y: auto;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+  }
+  .combo-dropdown.open { display: block; }
+  .combo-option {
+    padding: 4px 8px;
+    font-size: 9px;
+    color: #8a9aaa;
+    cursor: pointer;
+    transition: all 0.1s;
+  }
+  .combo-option:hover { background: #141c28; color: #c0cad8; }
+  .combo-option.active { color: #4fc3f7; }
+
+  /* ── FILTER SLIDERS (horizontal compact) ── */
+  .filter-row {
+    display: flex;
+    gap: 10px;
+    width: 100%;
+    justify-content: center;
+  }
+  .filter-group {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+  }
+  .filter-slider {
+    width: 70px;
+    height: 6px;
+    background: #0c1018;
+    border-radius: 3px;
+    position: relative;
+    cursor: pointer;
+    border: 1px solid #141c28;
+  }
+  .filter-fill {
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    background: #3a6a8a;
+    border-radius: 3px 0 0 3px;
+  }
+  .filter-thumb {
+    position: absolute;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 8px;
+    height: 14px;
+    background: linear-gradient(180deg, #c0cad8, #8a9aaa);
+    border-radius: 2px;
+    border: 1px solid rgba(79,195,247,0.3);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.5);
+  }
+  .filter-label {
+    font-size: 7.5px;
+    font-weight: 500;
+    letter-spacing: 0.8px;
+    color: #4a5a6a;
+    text-transform: uppercase;
+  }
+  .filter-value {
+    font-size: 8px;
+    font-weight: 400;
+    color: #6a7a8a;
+    height: 11px;
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+  .filter-group:hover .filter-value { opacity: 1; }
+
+  /* ── Fracture section special slider ── */
+  .section-fracture .slider-fill {
+    background: linear-gradient(0deg, #4fc3f7, #6ad4ff);
+    box-shadow: 0 0 10px rgba(79,195,247,0.35);
+  }
+  .section-fracture .knob-fill {
+    stroke: #6ad4ff;
+    filter: drop-shadow(0 0 4px rgba(79,195,247,0.45));
+  }
+
+  /* ── Divider ── */
+  .section-divider {
+    width: 80%;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, #1a2436, transparent);
+    margin: 4px 0;
+  }
+
+  /* ── Scrollbar for dropdown ── */
+  .combo-dropdown::-webkit-scrollbar { width: 4px; }
+  .combo-dropdown::-webkit-scrollbar-track { background: transparent; }
+  .combo-dropdown::-webkit-scrollbar-thumb { background: #1e2a3a; border-radius: 2px; }
+
+  /* fracture section column layout */
+  .fracture-content {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    justify-content: center;
+    flex: 1;
+  }
+</style>
+</head>
+<body>
+<div id="plugin">
+  <!-- HEADER -->
+  <div id="header">
+    <div class="logo-group">
+      <span class="plugin-title">Fracture</span>
+      <span class="plugin-subtitle">Granular Delay</span>
+    </div>
+    <div class="header-right">
+      <button class="freeze-btn" id="freezeBtn">FREEZE</button>
+    </div>
+  </div>
+
+  <!-- BODY -->
+  <div id="body">
+
+    <!-- DELAY SECTION -->
+    <div class="section section-delay">
+      <div class="section-label">Delay</div>
+      <div class="section-content">
+        <div class="knob-group">
+          <div class="knob-container" id="knob-delay_time" data-min="1" data-max="2000" data-value="250" data-unit="ms" data-log="true">
+            <svg class="knob-svg" viewBox="0 0 48 48"></svg>
+            <div class="knob-value">250 ms</div>
+          </div>
+          <div class="knob-label">Time</div>
+        </div>
+        <div class="sync-row">
+          <button class="sync-btn" id="syncBtn">SYNC</button>
+        </div>
+        <div class="combo-box" id="syncCombo" style="display:none;">
+          <button class="combo-btn" id="comboBtn">1/4</button>
+          <div class="combo-dropdown" id="comboDropdown"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- GRAIN SECTION -->
+    <div class="section section-grain">
+      <div class="section-label">Grain</div>
+      <div class="section-content">
+        <div class="knob-row">
+          <div class="knob-group">
+            <div class="knob-container" id="knob-grain_size" data-min="5" data-max="500" data-value="80" data-unit="ms" data-log="true">
+              <svg class="knob-svg" viewBox="0 0 48 48"></svg>
+              <div class="knob-value">80 ms</div>
+            </div>
+            <div class="knob-label">Size</div>
+          </div>
+          <div class="knob-group">
+            <div class="knob-container" id="knob-grain_rate" data-min="0.1" data-max="100" data-value="10" data-unit="Hz" data-log="true">
+              <svg class="knob-svg" viewBox="0 0 48 48"></svg>
+              <div class="knob-value">10 Hz</div>
+            </div>
+            <div class="knob-label">Rate</div>
+          </div>
+        </div>
+        <div class="section-divider"></div>
+        <div class="segment-group">
+          <div class="segment-label">Shape</div>
+          <div class="segment-row" id="shapeSelector">
+            <button class="segment-btn active" data-val="sine">SIN</button>
+            <button class="segment-btn" data-val="triangle">TRI</button>
+            <button class="segment-btn" data-val="square">SQR</button>
+            <button class="segment-btn" data-val="ramp">RMP</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CHARACTER SECTION -->
+    <div class="section section-character">
+      <div class="section-label">Character</div>
+      <div class="section-content">
+        <div class="knob-row">
+          <div class="knob-group">
+            <div class="knob-container" id="knob-feedback" data-min="0" data-max="120" data-value="40" data-unit="%" data-warn="100">
+              <svg class="knob-svg" viewBox="0 0 48 48"></svg>
+              <div class="knob-value">40%</div>
+            </div>
+            <div class="knob-label">Feedback</div>
+          </div>
+          <div class="knob-group">
+            <div class="knob-container" id="knob-diffusion" data-min="0" data-max="100" data-value="30" data-unit="%">
+              <svg class="knob-svg" viewBox="0 0 48 48"></svg>
+              <div class="knob-value">30%</div>
+            </div>
+            <div class="knob-label">Diffusion</div>
+          </div>
+        </div>
+        <div class="knob-row">
+          <div class="knob-group">
+            <div class="knob-container" id="knob-spread" data-min="0" data-max="100" data-value="50" data-unit="%">
+              <svg class="knob-svg" viewBox="0 0 48 48"></svg>
+              <div class="knob-value">50%</div>
+            </div>
+            <div class="knob-label">Spread</div>
+          </div>
+          <div class="knob-group">
+            <div class="knob-container" id="knob-detune" data-min="-50" data-max="50" data-value="0" data-unit="ct" data-bipolar="true">
+              <svg class="knob-svg" viewBox="0 0 48 48"></svg>
+              <div class="knob-value">0 ct</div>
+            </div>
+            <div class="knob-label">Detune</div>
+          </div>
+        </div>
+        <div class="section-divider"></div>
+        <div class="filter-row">
+          <div class="filter-group">
+            <div class="filter-label">Lo Cut</div>
+            <div class="filter-slider" id="filter-locut" data-min="20" data-max="5000" data-value="20" data-unit="Hz" data-log="true">
+              <div class="filter-fill"></div>
+              <div class="filter-thumb"></div>
+            </div>
+            <div class="filter-value">20 Hz</div>
+          </div>
+          <div class="filter-group">
+            <div class="filter-label">Hi Cut</div>
+            <div class="filter-slider" id="filter-hicut" data-min="200" data-max="20000" data-value="20000" data-unit="Hz" data-log="true">
+              <div class="filter-fill"></div>
+              <div class="filter-thumb"></div>
+            </div>
+            <div class="filter-value">20.0 kHz</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- FRACTURE SECTION -->
+    <div class="section section-fracture">
+      <div class="section-label">Fracture</div>
+      <div class="section-content">
+        <div class="fracture-content">
+          <div class="slider-group">
+            <div class="slider-value" style="height:13px;">&nbsp;</div>
+            <div class="slider-container" id="slider-reverse" data-min="0" data-max="100" data-value="0" data-unit="%">
+              <div class="slider-track" style="height:160px;">
+                <div class="slider-fill"></div>
+              </div>
+              <div class="slider-thumb"></div>
+              <div class="slider-markers">
+                <span class="slider-marker">REV</span>
+                <span class="slider-marker">FWD</span>
+              </div>
+            </div>
+            <div class="slider-label">Reverse</div>
+            <div class="slider-value">0%</div>
+          </div>
+          <div style="display:flex; flex-direction:column; gap:14px; align-items:center; padding-top:14px;">
+            <div class="knob-group">
+              <div class="knob-container large" id="knob-mutation" data-min="0" data-max="100" data-value="0" data-unit="%">
+                <svg class="knob-svg" viewBox="0 0 54 54"></svg>
+                <div class="knob-value">0%</div>
+              </div>
+              <div class="knob-label">Mutation</div>
+            </div>
+            <div class="knob-group">
+              <div class="knob-container large" id="knob-freqspread" data-min="0" data-max="100" data-value="0" data-unit="%">
+                <svg class="knob-svg" viewBox="0 0 54 54"></svg>
+                <div class="knob-value">0%</div>
+              </div>
+              <div class="knob-label">Freq Spread</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- MIX SECTION -->
+    <div class="section section-mix">
+      <div class="section-label">Mix</div>
+      <div class="section-content" style="justify-content:center; align-items:center;">
+        <div class="slider-group">
+          <div class="slider-value" style="height:13px;">&nbsp;</div>
+          <div class="slider-container" id="slider-drywet" data-min="0" data-max="100" data-value="50" data-unit="%">
+            <div class="slider-track" style="height:240px;">
+              <div class="slider-fill"></div>
+            </div>
+            <div class="slider-thumb"></div>
+            <div class="slider-markers">
+              <span class="slider-marker">WET</span>
+              <span class="slider-marker">DRY</span>
+            </div>
+          </div>
+          <div class="slider-label">Dry / Wet</div>
+          <div class="slider-value">50%</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+(function() {
+  'use strict';
+
+  // ── KNOB RENDERING & INTERACTION ──
+  const ARC_START = 135;
+  const ARC_END = 405;
+  const ARC_RANGE = ARC_END - ARC_START;
+
+  function polarToCart(cx, cy, r, angleDeg) {
+    const rad = (angleDeg - 90) * Math.PI / 180;
+    return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
+  }
+
+  function describeArc(cx, cy, r, startAngle, endAngle) {
+    const s = polarToCart(cx, cy, r, startAngle);
+    const e = polarToCart(cx, cy, r, endAngle);
+    const sweep = endAngle - startAngle;
+    const large = sweep > 180 ? 1 : 0;
+    return `M ${s.x} ${s.y} A ${r} ${r} 0 ${large} 1 ${e.x} ${e.y}`;
+  }
+
+  function renderKnob(el) {
+    const svg = el.querySelector('.knob-svg');
+    const vb = svg.getAttribute('viewBox').split(' ');
+    const size = parseFloat(vb[2]);
+    const cx = size / 2, cy = size / 2;
+    const r = size / 2 - 6;
+    const baseR = size / 2 - 10;
+    const indR = r - 4;
+
+    const min = parseFloat(el.dataset.min);
+    const max = parseFloat(el.dataset.max);
+    const val = parseFloat(el.dataset.value);
+    const bipolar = el.dataset.bipolar === 'true';
+    const warn = el.dataset.warn ? parseFloat(el.dataset.warn) : null;
+    const isLog = el.dataset.log === 'true';
+
+    let norm;
+    if (isLog) {
+      const logMin = Math.log(Math.max(min, 0.001));
+      const logMax = Math.log(max);
+      const logVal = Math.log(Math.max(val, 0.001));
+      norm = (logVal - logMin) / (logMax - logMin);
+    } else {
+      norm = (val - min) / (max - min);
+    }
+    norm = Math.max(0, Math.min(1, norm));
+
+    const angle = ARC_START + norm * ARC_RANGE;
+
+    // Build SVG
+    let html = '';
+    // Track
+    html += `<path d="${describeArc(cx, cy, r, ARC_START, ARC_END)}" class="knob-track"/>`;
+
+    // Fill arc
+    if (bipolar) {
+      const center = ARC_START + 0.5 * ARC_RANGE;
+      if (val > 0) {
+        html += `<path d="${describeArc(cx, cy, r, center, angle)}" class="knob-fill"/>`;
+      } else if (val < 0) {
+        html += `<path d="${describeArc(cx, cy, r, angle, center)}" class="knob-fill bipolar-neg"/>`;
+      }
+    } else {
+      const danger = warn !== null && val > warn;
+      if (norm > 0.005) {
+        html += `<path d="${describeArc(cx, cy, r, ARC_START, ARC_START + Math.max(norm, 0.01) * ARC_RANGE)}" class="knob-fill${danger ? ' danger' : ''}"/>`;
+      }
+    }
+
+    // Base circle
+    html += `<circle cx="${cx}" cy="${cy}" r="${baseR}" class="knob-base"/>`;
+
+    // Indicator line
+    const ind = polarToCart(cx, cy, indR, angle);
+    const indInner = polarToCart(cx, cy, baseR * 0.45, angle);
+    html += `<line x1="${indInner.x}" y1="${indInner.y}" x2="${ind.x}" y2="${ind.y}" class="knob-indicator"/>`;
+
+    svg.innerHTML = html;
+  }
+
+  function formatVal(val, unit, isLog) {
+    if (unit === 'Hz' && val >= 1000) return (val / 1000).toFixed(1) + ' kHz';
+    if (unit === 'Hz') return Math.round(val) + ' Hz';
+    if (unit === 'ms') return Math.round(val) + ' ms';
+    if (unit === '%') return Math.round(val) + '%';
+    if (unit === 'ct') return (val > 0 ? '+' : '') + Math.round(val) + ' ct';
+    return Math.round(val * 10) / 10 + (unit ? ' ' + unit : '');
+  }
+
+  function updateKnobValue(el) {
+    const val = parseFloat(el.dataset.value);
+    const unit = el.dataset.unit || '';
+    const isLog = el.dataset.log === 'true';
+    const display = el.querySelector('.knob-value');
+    if (display) display.textContent = formatVal(val, unit, isLog);
+  }
+
+  // Initialize all knobs
+  document.querySelectorAll('.knob-container').forEach(el => {
+    renderKnob(el);
+    updateKnobValue(el);
+  });
+
+  // Knob drag
+  let activeKnob = null, knobStartY, knobStartVal;
+  document.addEventListener('mousedown', e => {
+    const knob = e.target.closest('.knob-container');
+    if (!knob) return;
+    e.preventDefault();
+    activeKnob = knob;
+    knob.classList.add('dragging');
+    knobStartY = e.clientY;
+    knobStartVal = parseFloat(knob.dataset.value);
+  });
+  document.addEventListener('mousemove', e => {
+    if (!activeKnob) return;
+    const min = parseFloat(activeKnob.dataset.min);
+    const max = parseFloat(activeKnob.dataset.max);
+    const isLog = activeKnob.dataset.log === 'true';
+    const sensitivity = e.shiftKey ? 600 : 150;
+    const dy = knobStartY - e.clientY;
+    const range = max - min;
+
+    let newVal;
+    if (isLog) {
+      const logMin = Math.log(Math.max(min, 0.001));
+      const logMax = Math.log(max);
+      const startNorm = (Math.log(Math.max(knobStartVal, 0.001)) - logMin) / (logMax - logMin);
+      const newNorm = Math.max(0, Math.min(1, startNorm + dy / sensitivity));
+      newVal = Math.exp(logMin + newNorm * (logMax - logMin));
+    } else {
+      newVal = knobStartVal + (dy / sensitivity) * range;
+    }
+
+    newVal = Math.max(min, Math.min(max, newVal));
+    activeKnob.dataset.value = newVal;
+    renderKnob(activeKnob);
+    updateKnobValue(activeKnob);
+  });
+  document.addEventListener('mouseup', () => {
+    if (activeKnob) activeKnob.classList.remove('dragging');
+    activeKnob = null;
+  });
+
+  // Double-click reset
+  document.querySelectorAll('.knob-container').forEach(el => {
+    el.addEventListener('dblclick', () => {
+      const bipolar = el.dataset.bipolar === 'true';
+      const defs = { 'knob-delay_time': 250, 'knob-grain_size': 80, 'knob-grain_rate': 10,
+        'knob-feedback': 40, 'knob-diffusion': 30, 'knob-spread': 50, 'knob-detune': 0,
+        'knob-mutation': 0, 'knob-freqspread': 0 };
+      el.dataset.value = defs[el.id] !== undefined ? defs[el.id] : (bipolar ? 0 : parseFloat(el.dataset.min));
+      renderKnob(el);
+      updateKnobValue(el);
+    });
+  });
+
+  // ── VERTICAL SLIDERS ──
+  function initSlider(container) {
+    const track = container.querySelector('.slider-track');
+    const fill = container.querySelector('.slider-fill');
+    const thumb = container.querySelector('.slider-thumb');
+    const valEls = container.closest('.slider-group').querySelectorAll('.slider-value');
+    const min = parseFloat(container.dataset.min);
+    const max = parseFloat(container.dataset.max);
+    const unit = container.dataset.unit || '';
+    const trackH = track.offsetHeight;
+
+    function update() {
+      const val = parseFloat(container.dataset.value);
+      const norm = (val - min) / (max - min);
+      const px = norm * trackH;
+      fill.style.height = px + 'px';
+      thumb.style.bottom = (px - 3.5) + 'px';
+      const txt = formatVal(val, unit, false);
+      valEls.forEach(v => v.textContent = txt);
+    }
+    update();
+
+    let dragging = false, startY, startVal;
+    container.addEventListener('mousedown', e => {
+      e.preventDefault();
+      dragging = true;
+      container.classList.add('dragging');
+      startY = e.clientY;
+      startVal = parseFloat(container.dataset.value);
+      const onMove = ev => {
+        if (!dragging) return;
+        const sens = ev.shiftKey ? 600 : 200;
+        const dy = startY - ev.clientY;
+        const newVal = Math.max(min, Math.min(max, startVal + (dy / sens) * (max - min)));
+        container.dataset.value = newVal;
+        update();
+      };
+      const onUp = () => {
+        dragging = false;
+        container.classList.remove('dragging');
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+      };
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+  }
+
+  document.querySelectorAll('.slider-container').forEach(initSlider);
+
+  // ── FILTER SLIDERS (horizontal) ──
+  document.querySelectorAll('.filter-slider').forEach(el => {
+    const fill = el.querySelector('.filter-fill');
+    const thumb = el.querySelector('.filter-thumb');
+    const valEl = el.closest('.filter-group').querySelector('.filter-value');
+    const min = parseFloat(el.dataset.min);
+    const max = parseFloat(el.dataset.max);
+    const isLog = el.dataset.log === 'true';
+    const unit = el.dataset.unit || '';
+    const w = 70;
+
+    function update() {
+      const val = parseFloat(el.dataset.value);
+      let norm;
+      if (isLog) {
+        const logMin = Math.log(min);
+        const logMax = Math.log(max);
+        norm = (Math.log(val) - logMin) / (logMax - logMin);
+      } else {
+        norm = (val - min) / (max - min);
+      }
+      norm = Math.max(0, Math.min(1, norm));
+      fill.style.width = (norm * 100) + '%';
+      thumb.style.left = (norm * w) + 'px';
+      valEl.textContent = formatVal(val, unit, isLog);
+    }
+    update();
+
+    let dragging = false, startX, startVal;
+    el.addEventListener('mousedown', e => {
+      e.preventDefault();
+      dragging = true;
+      startX = e.clientX;
+      startVal = parseFloat(el.dataset.value);
+      const onMove = ev => {
+        if (!dragging) return;
+        const dx = ev.clientX - startX;
+        const sens = ev.shiftKey ? 400 : 100;
+        if (isLog) {
+          const logMin = Math.log(min);
+          const logMax = Math.log(max);
+          const startNorm = (Math.log(startVal) - logMin) / (logMax - logMin);
+          const newNorm = Math.max(0, Math.min(1, startNorm + dx / sens));
+          el.dataset.value = Math.exp(logMin + newNorm * (logMax - logMin));
+        } else {
+          el.dataset.value = Math.max(min, Math.min(max, startVal + (dx / sens) * (max - min)));
+        }
+        update();
+      };
+      const onUp = () => {
+        dragging = false;
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+      };
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+  });
+
+  // ── FREEZE BUTTON ──
+  document.getElementById('freezeBtn').addEventListener('click', function() {
+    this.classList.toggle('active');
+  });
+
+  // ── SYNC TOGGLE ──
+  const syncBtn = document.getElementById('syncBtn');
+  const syncCombo = document.getElementById('syncCombo');
+  syncBtn.addEventListener('click', function() {
+    this.classList.toggle('active');
+    syncCombo.style.display = this.classList.contains('active') ? 'block' : 'none';
+  });
+
+  // ── COMBO BOX ──
+  const divisions = ['1/1','1/1D','1/1T','1/2','1/2D','1/2T','1/4','1/4D','1/4T','1/8','1/8D','1/8T','1/16','1/16D','1/16T','1/32','1/32D','1/32T'];
+  const comboBtn = document.getElementById('comboBtn');
+  const dropdown = document.getElementById('comboDropdown');
+  let currentDiv = '1/4';
+
+  divisions.forEach(d => {
+    const opt = document.createElement('div');
+    opt.className = 'combo-option' + (d === currentDiv ? ' active' : '');
+    opt.textContent = d;
+    opt.addEventListener('click', () => {
+      currentDiv = d;
+      comboBtn.textContent = d;
+      dropdown.querySelectorAll('.combo-option').forEach(o => o.classList.remove('active'));
+      opt.classList.add('active');
+      dropdown.classList.remove('open');
+    });
+    dropdown.appendChild(opt);
+  });
+
+  comboBtn.addEventListener('click', e => {
+    e.stopPropagation();
+    dropdown.classList.toggle('open');
+  });
+  document.addEventListener('click', () => dropdown.classList.remove('open'));
+
+  // ── SHAPE SELECTOR ──
+  document.querySelectorAll('#shapeSelector .segment-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+      document.querySelectorAll('#shapeSelector .segment-btn').forEach(b => b.classList.remove('active'));
+      this.classList.add('active');
+    });
+  });
+
+})();
+</script>
+</body>
+</html>
