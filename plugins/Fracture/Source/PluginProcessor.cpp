@@ -21,6 +21,16 @@ FractureProcessor::FractureProcessor()
     detuneParam       = parameters.getRawParameterValue("detune");
     lowCutParam       = parameters.getRawParameterValue("low_cut");
     highCutParam      = parameters.getRawParameterValue("high_cut");
+
+    // Phase 4.3 parameter pointers
+    reverseMixParam          = parameters.getRawParameterValue("reverse_mix");
+    grainMutationParam       = parameters.getRawParameterValue("grain_mutation");
+    freqSpreadParam          = parameters.getRawParameterValue("freq_spread");
+    freezeParam              = parameters.getRawParameterValue("freeze");
+    delaySyncToggleParam     = parameters.getRawParameterValue("delay_sync_toggle");
+    delaySyncDivParam        = parameters.getRawParameterValue("delay_sync_division");
+    grainRateSyncToggleParam = parameters.getRawParameterValue("grain_rate_sync_toggle");
+    grainRateSyncDivParam    = parameters.getRawParameterValue("grain_rate_sync_division");
 }
 
 FractureProcessor::~FractureProcessor()
@@ -339,6 +349,120 @@ void FractureProcessor::spawnGrain(int grainLengthSamples, uint8_t windowType,
 }
 
 // =============================================================================
+// Phase 4.3: Advanced Grain Spawning (reverse, mutation, freq-dependent sizing)
+// =============================================================================
+
+void FractureProcessor::spawnGrainAdvanced(int grainLengthSamples, uint8_t windowType,
+                                            float spreadAmount, float detuneCents,
+                                            float reverseMix, float mutationAmount,
+                                            float freqSpread, float lowE, float midE, float highE)
+{
+    // Find an inactive grain slot
+    int slotIndex = -1;
+    for (int i = 0; i < kMaxGrains; ++i)
+    {
+        if (!grainPool[static_cast<size_t>(i)].active)
+        {
+            slotIndex = i;
+            break;
+        }
+    }
+
+    // If no free slot, steal the oldest (highest phase)
+    if (slotIndex < 0)
+    {
+        float highestPhase = -1.0f;
+        for (int i = 0; i < kMaxGrains; ++i)
+        {
+            if (grainPool[static_cast<size_t>(i)].phase > highestPhase)
+            {
+                highestPhase = grainPool[static_cast<size_t>(i)].phase;
+                slotIndex = i;
+            }
+        }
+    }
+
+    if (slotIndex < 0)
+        return;
+
+    // Deterministic hash for this grain (Knuth multiplicative hash)
+    uint32_t seed = grainSeedCounter++;
+    uint32_t hash = seed * 2654435761u;
+
+    auto& grain = grainPool[static_cast<size_t>(slotIndex)];
+    grain.active = true;
+    grain.startReadPos = writePos;
+    grain.windowType = windowType;
+    grain.currentSample = 0;
+    grain.phase = 0.0f;
+
+    // --- Phase 4.3: Frequency-Dependent Grain Size ---
+    float effectiveLength = static_cast<float>(grainLengthSamples);
+    if (freqSpread > 0.001f)
+    {
+        float totalEnergy = lowE + midE + highE + 1.0e-10f;  // Avoid division by zero
+        float lowWeight  = lowE  / totalEnergy;
+        float midWeight  = midE  / totalEnergy;
+        float highWeight = highE / totalEnergy;
+
+        // freqSpread is 0.0 to 1.0
+        float lowScale  = juce::jmap(freqSpread, 1.0f, 3.0f);
+        float highScale = juce::jmap(freqSpread, 1.0f, 0.35f);
+        float midScale  = 1.0f;  // Mid stays at base size
+
+        float weightedScale = lowWeight * lowScale + midWeight * midScale + highWeight * highScale;
+        effectiveLength *= weightedScale;
+    }
+
+    // --- Phase 4.3: Grain Mutation ---
+    // Read pass count from buffer at grain start position
+    uint8_t passCount = 0;
+    if (!passCountBuffer[0].empty())
+        passCount = passCountBuffer[0][static_cast<size_t>(writePos)];
+    grain.mutationPass = passCount;
+
+    float t = std::min(static_cast<float>(passCount) / 20.0f, 1.0f);
+    float m = mutationAmount;  // 0.0 to 1.0
+
+    // Grain size scaling from mutation
+    float sizeScale = 1.0f - (0.6f * t * m);  // Shrinks to 40%
+    effectiveLength *= sizeScale;
+
+    // Min grain size: 5ms equivalent
+    float minSamples = static_cast<float>(currentSampleRate) * 0.005f;
+    effectiveLength = juce::jmax(effectiveLength, minSamples);
+    grain.lengthSamples = juce::jmax(1, static_cast<int>(effectiveLength));
+
+    // --- Phase 4.3: Reverse Grain Mix ---
+    // Use bits 8-23 of hash for reverse decision
+    float hashFloat = static_cast<float>((hash >> 8) & 0xFFFFu) / 65535.0f;
+    grain.isReversed = (hashFloat < (reverseMix * 0.01f));
+
+    // --- Phase 4.2: Stereo Spread ---
+    float panNorm = static_cast<float>(hash & 0xFFFFu) / 65535.0f;
+    float panAngle = (0.5f + (panNorm - 0.5f) * spreadAmount)
+                     * (juce::MathConstants<float>::pi * 0.5f);
+    grain.panL = std::cos(panAngle);
+    grain.panR = std::sin(panAngle);
+
+    // --- Phase 4.2 + 4.3: Detune + Mutation Pitch Drift ---
+    float detuneNorm = static_cast<float>((hash >> 16) & 0xFFFFu) / 65535.0f;
+    float centsOffset = (detuneNorm * 2.0f - 1.0f) * detuneCents;
+
+    // Mutation pitch drift: ±50 cents max, based on pass count
+    if (m > 0.001f && t > 0.001f)
+    {
+        // Use different hash bits for pitch drift randomization
+        uint32_t hash2 = (hash >> 4) * 2246822519u;
+        float randomBipolar = (static_cast<float>(hash2 & 0xFFFFu) / 65535.0f) * 2.0f - 1.0f;
+        float pitchDrift = 50.0f * t * m * randomBipolar;
+        centsOffset += pitchDrift;
+    }
+
+    grain.playbackRate = std::pow(2.0f, centsOffset / 1200.0f);
+}
+
+// =============================================================================
 // Phase 4.2: Diffusion Network
 // =============================================================================
 
@@ -429,6 +553,37 @@ void FractureProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 
     // Reset grain seed counter
     grainSeedCounter = 0;
+
+    // =========================================================================
+    // Phase 4.3: Initialize advanced feature components
+    // =========================================================================
+
+    // Pass count buffers (same size as delay buffer, per channel)
+    for (auto& pcBuf : passCountBuffer)
+    {
+        pcBuf.resize(static_cast<size_t>(kBufferSize), 0);
+        std::fill(pcBuf.begin(), pcBuf.end(), static_cast<uint8_t>(0));
+    }
+
+    // Freeze system
+    freezeGain = 1.0f;
+    freezeTargetGain = 1.0f;
+    // 10ms crossfade rate
+    freezeFadeRate = 1.0f / static_cast<float>(sampleRate * 0.010);
+    midiFreeze = false;
+
+    // Tempo sync: smoothed BPM (50ms multiplicative smoothing)
+    smoothedBPM.reset(sampleRate, 0.050);
+    smoothedBPM.setCurrentAndTargetValue(120.0f);
+    currentBPM = 120.0;
+
+    // Band splitter for frequency-dependent grain size
+    for (auto& bs : bandSplitter)
+        bs.init(static_cast<float>(sampleRate));
+
+    // Band energy accumulators
+    for (auto& be : bandEnergy)
+        be.init(static_cast<float>(sampleRate));
 }
 
 void FractureProcessor::releaseResources()
@@ -436,6 +591,10 @@ void FractureProcessor::releaseResources()
     // Clear delay buffer memory
     for (auto& channelBuf : delayBuffer)
         std::fill(channelBuf.begin(), channelBuf.end(), 0.0f);
+
+    // Clear pass count buffers
+    for (auto& pcBuf : passCountBuffer)
+        std::fill(pcBuf.begin(), pcBuf.end(), static_cast<uint8_t>(0));
 }
 
 // =============================================================================
@@ -444,7 +603,6 @@ void FractureProcessor::releaseResources()
 
 void FractureProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
 {
-    juce::ignoreUnused(midiMessages);
     juce::ScopedNoDenormals noDenormals;
 
     const int numChannels = juce::jmin(buffer.getNumChannels(), 2);
@@ -453,12 +611,38 @@ void FractureProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
     if (numChannels == 0 || numSamples == 0)
         return;
 
+    // =========================================================================
+    // Phase 4.3: Read BPM from host AudioPlayHead
+    // =========================================================================
+    if (auto* playHead = getPlayHead())
+    {
+        if (auto posInfo = playHead->getPosition())
+        {
+            if (posInfo->getBpm().hasValue())
+                currentBPM = *posInfo->getBpm();
+        }
+    }
+    // Fallback BPM already initialized to 120.0
+    smoothedBPM.setTargetValue(static_cast<float>(currentBPM));
+
+    // =========================================================================
+    // Phase 4.3: Process MIDI for freeze toggle (note-on = freeze, note-off = unfreeze)
+    // =========================================================================
+    for (const auto metadata : midiMessages)
+    {
+        auto msg = metadata.getMessage();
+        if (msg.isNoteOn())
+            midiFreeze = true;
+        else if (msg.isNoteOff())
+            midiFreeze = false;
+    }
+
     // --- Block-rate parameter reads ---
-    const float delayTimeMs   = delayTimeParam->load();
-    const float grainSizeMs   = grainSizeParam->load();
-    const float grainRateHz   = grainRateParam->load();
-    const int   grainShapeIdx = static_cast<int>(grainShapeParam->load());
-    const float dryWetPct     = dryWetParam->load();
+    const float delayTimeMsParam = delayTimeParam->load();
+    const float grainSizeMs      = grainSizeParam->load();
+    const float grainRateHzParam = grainRateParam->load();
+    const int   grainShapeIdx    = static_cast<int>(grainShapeParam->load());
+    const float dryWetPct        = dryWetParam->load();
 
     // Phase 4.2 parameters
     const float feedbackPct   = feedbackParam->load();
@@ -468,18 +652,49 @@ void FractureProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
     const float lowCutHz      = lowCutParam->load();
     const float highCutHz     = highCutParam->load();
 
+    // Phase 4.3 parameters
+    const float reverseMix    = reverseMixParam->load();      // 0-100%
+    const float mutationPct   = grainMutationParam->load();   // 0-100%
+    const float freqSpreadPct = freqSpreadParam->load();      // 0-100%
+    const bool  freezeOn      = (freezeParam->load() >= 0.5f) || midiFreeze;
+    const bool  delaySyncOn   = (delaySyncToggleParam->load() >= 0.5f);
+    const int   delaySyncDiv  = static_cast<int>(delaySyncDivParam->load());
+    const bool  grainRateSyncOn = (grainRateSyncToggleParam->load() >= 0.5f);
+    const int   grainRateSyncDiv = static_cast<int>(grainRateSyncDivParam->load());
+
     const float sr = static_cast<float>(currentSampleRate);
+    const float mutationAmount = mutationPct * 0.01f;  // 0.0 to 1.0
+    const float freqSpread     = freqSpreadPct * 0.01f; // 0.0 to 1.0
+
+    // =========================================================================
+    // Phase 4.3: Tempo Sync - compute delay time and grain rate
+    // =========================================================================
+    float bpm = smoothedBPM.getNextValue();
+    if (bpm < 20.0f) bpm = 120.0f;  // Safety
+
+    float delayTimeMs = delayTimeMsParam;
+    if (delaySyncOn)
+    {
+        int divIdx = juce::jlimit(0, 17, delaySyncDiv);
+        delayTimeMs = (60000.0f / bpm) * kDivisionMultipliers[divIdx];
+    }
+
+    float grainRateHz = grainRateHzParam;
+    if (grainRateSyncOn)
+    {
+        int divIdx = juce::jlimit(0, 17, grainRateSyncDiv);
+        grainRateHz = bpm / (60.0f * kDivisionMultipliers[divIdx]);
+    }
 
     // Convert parameters to sample-domain values
-    const float delaySamples   = (delayTimeMs * 0.001f) * sr;
+    const float delaySamples    = (delayTimeMs * 0.001f) * sr;
     const int   grainLenSamples = juce::jmax(1, static_cast<int>((grainSizeMs * 0.001f) * sr));
     const float samplesPerGrain = (grainRateHz > 0.0f) ? (sr / grainRateHz) : sr;
-    const uint8_t windowType   = static_cast<uint8_t>(juce::jlimit(0, 3, grainShapeIdx));
+    const uint8_t windowType    = static_cast<uint8_t>(juce::jlimit(0, 3, grainShapeIdx));
 
     // Phase 4.2: derived values
     const float spreadAmount   = spreadPct * 0.01f;       // 0.0 to 1.0
     const float diffusionAmt   = diffusionPct * 0.01f;    // 0.0 to 1.0
-    // Feedback: 0-120% param, cap at 115% (1.15f)
     const float feedbackTarget = juce::jmin(feedbackPct * 0.01f, 1.15f);
 
     // Set smoothed parameter targets
@@ -493,6 +708,11 @@ void FractureProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
         feedbackLP[static_cast<size_t>(ch)].setLowpass(highCutHz, sr);
     }
 
+    // =========================================================================
+    // Phase 4.3: Freeze target gain
+    // =========================================================================
+    freezeTargetGain = freezeOn ? 0.0f : 1.0f;
+
     // Get buffer write pointers
     float* channelData[2] = { nullptr, nullptr };
     for (int ch = 0; ch < numChannels; ++ch)
@@ -505,19 +725,46 @@ void FractureProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
         const float mixAmount    = smoothedDryWet.getNextValue();
         const float feedbackGain = smoothedFeedback.getNextValue();
 
+        // Phase 4.3: Update freeze crossfade (10ms linear ramp)
+        if (freezeGain < freezeTargetGain)
+        {
+            freezeGain += freezeFadeRate;
+            if (freezeGain > freezeTargetGain)
+                freezeGain = freezeTargetGain;
+        }
+        else if (freezeGain > freezeTargetGain)
+        {
+            freezeGain -= freezeFadeRate;
+            if (freezeGain < freezeTargetGain)
+                freezeGain = freezeTargetGain;
+        }
+
         // (2) Capture dry input
         float dryL = channelData[0][samp];
         float dryR = (numChannels > 1) ? channelData[1][samp] : dryL;
 
-        // (3) Grain scheduler: accumulate and spawn (with stereo spread + detune)
+        // Phase 4.3: Band energy analysis for frequency-dependent grain sizing
+        float lowBand = 0.0f, midBand = 0.0f, highBand = 0.0f;
+        float inputMono = (dryL + dryR) * 0.5f;  // Mono sum for analysis
+        bandSplitter[0].process(inputMono, lowBand, midBand, highBand);
+        bandEnergy[0].update(lowBand, midBand, highBand);
+
+        // Get current band energies (RMS values) for grain spawn decisions
+        float lowE  = bandEnergy[0].lowRMS;
+        float midE  = bandEnergy[0].midRMS;
+        float highE = bandEnergy[0].highRMS;
+
+        // (3) Grain scheduler: accumulate and spawn with Phase 4.3 features
         grainAccumulator += 1.0f;
         if (grainAccumulator >= samplesPerGrain)
         {
             grainAccumulator -= samplesPerGrain;
-            spawnGrain(grainLenSamples, windowType, spreadAmount, detuneCents);
+            spawnGrainAdvanced(grainLenSamples, windowType, spreadAmount, detuneCents,
+                               reverseMix, mutationAmount, freqSpread,
+                               lowE, midE, highE);
         }
 
-        // (4) Process all active grains - sum their outputs (with playback rate for detune)
+        // (4) Process all active grains - sum their outputs
         float wetL = 0.0f;
         float wetR = 0.0f;
 
@@ -537,18 +784,41 @@ void FractureProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
                 continue;
             }
 
-            // Compute read delay using fractional position for detuned playback
+            // Compute read delay - Phase 4.3: handle reverse playback
             int samplesSinceSpawn = (writePos - grain.startReadPos + kBufferSize) & kBufferMask;
-            float readDelay = static_cast<float>(samplesSinceSpawn) + delaySamples
-                              - fractionalPos;
+            float readDelay;
+
+            if (grain.isReversed)
+            {
+                // Reversed grain: audio reads backward from start position
+                // Envelope still plays forward (phase 0->1)
+                readDelay = static_cast<float>(samplesSinceSpawn) + delaySamples
+                            - (static_cast<float>(grain.lengthSamples) - fractionalPos);
+            }
+            else
+            {
+                // Normal forward playback
+                readDelay = static_cast<float>(samplesSinceSpawn) + delaySamples
+                            - fractionalPos;
+            }
 
             // Clamp to valid range (need at least 1 sample for Hermite, max buffer-4)
             readDelay = juce::jlimit(1.0f, static_cast<float>(kBufferSize - 4), readDelay);
 
-            // Apply window envelope (use integer approximation of fractional position)
+            // Apply window envelope (always plays forward regardless of reverse)
             int fractionalPosInt = static_cast<int>(fractionalPos);
             float envelope = applyWindow(grain.phase, grain.windowType,
                                          grain.lengthSamples, fractionalPosInt);
+
+            // Energy compensation for mutation (grains get shorter, so boost slightly)
+            if (grain.mutationPass > 0 && mutationAmount > 0.001f)
+            {
+                float tMut = std::min(static_cast<float>(grain.mutationPass) / 20.0f, 1.0f);
+                float sizeScale = 1.0f - (0.6f * tMut * mutationAmount);
+                // Compensate: shorter grains get proportional boost (sqrt for energy)
+                if (sizeScale > 0.1f)
+                    envelope *= std::sqrt(1.0f / sizeScale);
+            }
 
             // Read from delay buffer and apply envelope + pan
             for (int ch = 0; ch < numChannels; ++ch)
@@ -562,7 +832,7 @@ void FractureProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
                     wetR += grainOut * grain.panR;
             }
 
-            // Advance grain playback position (integer counter, fractional handled by playbackRate)
+            // Advance grain playback position
             grain.currentSample++;
         }
 
@@ -574,7 +844,7 @@ void FractureProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
         if (numChannels > 1)
             channelData[1][samp] = dryR * (1.0f - mixAmount) + wetR * mixAmount;
 
-        // (7) Feedback path: wet → soft clip → DC block → HP → LP → gain
+        // (7) Feedback path: wet -> soft clip -> DC block -> HP -> LP -> gain
         float fbL = softClip(wetL);
         float fbR = softClip(wetR);
 
@@ -590,10 +860,52 @@ void FractureProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
         fbL *= feedbackGain;
         fbR *= feedbackGain;
 
-        // (8) Write to buffer: input + feedback
-        delayBuffer[0][static_cast<size_t>(writePos)] = dryL + fbL;
-        if (numChannels > 1)
-            delayBuffer[1][static_cast<size_t>(writePos)] = dryR + fbR;
+        // (8) Write to buffer with freeze gating
+        // Phase 4.3 Freeze:
+        //   - Clean freeze (mutation == 0%): stop ALL writes (input + feedback)
+        //   - Live freeze (mutation > 0%):   stop input writes only, feedback continues
+        bool cleanFreeze = (mutationAmount < 0.001f);
+
+        float inputGateL = dryL * freezeGain;
+        float inputGateR = dryR * freezeGain;
+
+        if (cleanFreeze)
+        {
+            // Clean freeze: gate both input and feedback
+            float fbGateL = fbL * freezeGain;
+            float fbGateR = fbR * freezeGain;
+            delayBuffer[0][static_cast<size_t>(writePos)] = inputGateL + fbGateL;
+            if (numChannels > 1)
+                delayBuffer[1][static_cast<size_t>(writePos)] = inputGateR + fbGateR;
+        }
+        else
+        {
+            // Live freeze: gate only input, feedback continues
+            delayBuffer[0][static_cast<size_t>(writePos)] = inputGateL + fbL;
+            if (numChannels > 1)
+                delayBuffer[1][static_cast<size_t>(writePos)] = inputGateR + fbR;
+        }
+
+        // Phase 4.3: Update pass count buffer on feedback write
+        // Only increment when feedback is actually being written
+        bool feedbackWritten = cleanFreeze ? (freezeGain > 0.001f) : true;
+        if (feedbackWritten && (feedbackGain > 0.001f))
+        {
+            size_t wp = static_cast<size_t>(writePos);
+            for (int ch = 0; ch < numChannels; ++ch)
+            {
+                uint8_t pc = passCountBuffer[static_cast<size_t>(ch)][wp];
+                if (pc < 255)
+                    passCountBuffer[static_cast<size_t>(ch)][wp] = pc + 1;
+            }
+        }
+        else
+        {
+            // Reset pass count when no feedback is being written
+            size_t wp = static_cast<size_t>(writePos);
+            for (int ch = 0; ch < numChannels; ++ch)
+                passCountBuffer[static_cast<size_t>(ch)][wp] = 0;
+        }
 
         // (9) Advance buffer write pointer
         writePos = (writePos + 1) & kBufferMask;

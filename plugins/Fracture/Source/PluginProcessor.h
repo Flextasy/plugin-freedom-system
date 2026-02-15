@@ -224,5 +224,122 @@ private:
     std::atomic<float>* lowCutParam     = nullptr;
     std::atomic<float>* highCutParam    = nullptr;
 
+    // =========================================================================
+    // Phase 4.3: Advanced Features (Unique Selling Points)
+    // =========================================================================
+
+    // --- Cached parameter pointers for Phase 4.3 ---
+    std::atomic<float>* reverseMixParam       = nullptr;
+    std::atomic<float>* grainMutationParam    = nullptr;
+    std::atomic<float>* freqSpreadParam       = nullptr;
+    std::atomic<float>* freezeParam           = nullptr;
+    std::atomic<float>* delaySyncToggleParam  = nullptr;
+    std::atomic<float>* delaySyncDivParam     = nullptr;
+    std::atomic<float>* grainRateSyncToggleParam = nullptr;
+    std::atomic<float>* grainRateSyncDivParam    = nullptr;
+
+    // --- Pass Count Buffer (for Grain Mutation) ---
+    std::array<std::vector<uint8_t>, 2> passCountBuffer;  // [channel][sample]
+
+    // --- Freeze System ---
+    float freezeGain = 1.0f;        // Current crossfade gain (0=frozen, 1=writing)
+    float freezeTargetGain = 1.0f;  // Target gain
+    float freezeFadeRate = 0.0f;    // Per-sample increment toward target (10ms ramp)
+    bool  midiFreeze = false;       // MIDI note-on/off freeze toggle state
+
+    // --- Tempo Sync ---
+    double currentBPM = 120.0;
+    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Multiplicative> smoothedBPM;
+
+    // Note division multipliers (beats per note)
+    static constexpr float kDivisionMultipliers[18] = {
+        4.0f,           // 1/1
+        6.0f,           // 1/1D
+        8.0f / 3.0f,    // 1/1T
+        2.0f,           // 1/2
+        3.0f,           // 1/2D
+        4.0f / 3.0f,    // 1/2T
+        1.0f,           // 1/4
+        1.5f,           // 1/4D
+        2.0f / 3.0f,    // 1/4T
+        0.5f,           // 1/8
+        0.75f,          // 1/8D
+        1.0f / 3.0f,    // 1/8T
+        0.25f,          // 1/16
+        0.375f,         // 1/16D
+        1.0f / 6.0f,    // 1/16T
+        0.125f,         // 1/32
+        0.1875f,        // 1/32D
+        1.0f / 12.0f    // 1/32T
+    };
+
+    // --- Frequency-Dependent Grain Size ---
+    // Simple biquad-based crossover using cascaded 1-pole filters
+    // Low band: <250 Hz, Mid: 250-2500 Hz, High: >2500 Hz
+    struct BandSplitter
+    {
+        OnePoleFilter lowSplit;   // 250 Hz crossover
+        OnePoleFilter highSplit;  // 2500 Hz crossover
+
+        void init(float sampleRate)
+        {
+            lowSplit.setLowpass(250.0f, sampleRate);
+            highSplit.setLowpass(2500.0f, sampleRate);
+            lowSplit.reset();
+            highSplit.reset();
+        }
+
+        // Returns low, mid, high band samples
+        void process(float input, float& low, float& mid, float& high)
+        {
+            low = lowSplit.processLowpass(input);
+            float aboveLow = input - low;
+            float midLow = highSplit.processLowpass(aboveLow);
+            high = aboveLow - midLow;
+            mid = midLow;
+        }
+
+        void reset()
+        {
+            lowSplit.reset();
+            highSplit.reset();
+        }
+    };
+
+    std::array<BandSplitter, 2> bandSplitter;
+
+    // RMS energy accumulators (~100ms window via exponential decay)
+    struct BandEnergy
+    {
+        float lowRMS  = 0.0f;
+        float midRMS  = 0.0f;
+        float highRMS = 0.0f;
+        float alpha   = 0.0f;  // Exponential decay coefficient
+
+        void init(float sampleRate)
+        {
+            // ~100ms time constant: alpha = 1 - exp(-1/(sr*0.1))
+            alpha = 1.0f - std::exp(-1.0f / (sampleRate * 0.1f));
+            lowRMS = 0.0f;
+            midRMS = 0.0f;
+            highRMS = 0.0f;
+        }
+
+        void update(float low, float mid, float high)
+        {
+            lowRMS  += alpha * (low  * low  - lowRMS);
+            midRMS  += alpha * (mid  * mid  - midRMS);
+            highRMS += alpha * (high * high - highRMS);
+        }
+    };
+
+    std::array<BandEnergy, 2> bandEnergy;
+
+    // Updated spawnGrain signature for Phase 4.3
+    void spawnGrainAdvanced(int grainLengthSamples, uint8_t windowType,
+                            float spreadAmount, float detuneCents,
+                            float reverseMix, float mutationAmount,
+                            float freqSpread, float lowE, float midE, float highE);
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(FractureProcessor)
 };
