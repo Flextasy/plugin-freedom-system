@@ -83,7 +83,8 @@ private:
     float grainAccumulator = 0.0f;    // Sample accumulator for grain triggering
 
     // Spawn a new grain, stealing oldest if pool is full
-    void spawnGrain(int grainLengthSamples, uint8_t windowType);
+    void spawnGrain(int grainLengthSamples, uint8_t windowType,
+                    float spreadAmount, float detuneCents);
 
     // Apply grain window envelope
     static float applyWindow(float phase, uint8_t windowType, int lengthSamples, int currentSample);
@@ -100,6 +101,128 @@ private:
 
     // --- Runtime state ---
     double currentSampleRate = 44100.0;
+
+    // =========================================================================
+    // Phase 4.2: Feedback & Character Components
+    // =========================================================================
+
+    // --- DC Blocker (1-pole HPF at ~5 Hz, R = 0.995) ---
+    struct DCBlocker
+    {
+        float x1 = 0.0f, y1 = 0.0f;
+        static constexpr float R = 0.995f;
+
+        float process(float input)
+        {
+            float output = input - x1 + R * y1;
+            x1 = input;
+            y1 = output;
+            return output;
+        }
+
+        void reset()
+        {
+            x1 = 0.0f;
+            y1 = 0.0f;
+        }
+    };
+
+    // --- 1-Pole Filter (6 dB/oct) ---
+    struct OnePoleFilter
+    {
+        float z1 = 0.0f;
+        float alpha = 1.0f;
+
+        void setLowpass(float cutoffHz, float sampleRate)
+        {
+            float dt = 1.0f / sampleRate;
+            float rc = 1.0f / (2.0f * juce::MathConstants<float>::pi * cutoffHz);
+            alpha = dt / (rc + dt);
+        }
+
+        float processLowpass(float input)
+        {
+            z1 = input * alpha + z1 * (1.0f - alpha);
+            return z1;
+        }
+
+        float processHighpass(float input)
+        {
+            return input - processLowpass(input);
+        }
+
+        void reset()
+        {
+            z1 = 0.0f;
+        }
+    };
+
+    // --- Schroeder Allpass Stage ---
+    struct AllpassStage
+    {
+        static constexpr int kMaxAllpassDelay = 2048;  // Enough for scaled primes
+        static constexpr int kAllpassMask = kMaxAllpassDelay - 1;
+
+        std::array<float, kMaxAllpassDelay> delayLine {};
+        int apWritePos = 0;
+        int delaySamples = 0;
+        float coefficient = 0.0f;
+
+        void init(int delaySamps)
+        {
+            delaySamples = juce::jlimit(1, kMaxAllpassDelay - 1, delaySamps);
+            delayLine.fill(0.0f);
+            apWritePos = 0;
+        }
+
+        float process(float input)
+        {
+            float delayed = delayLine[static_cast<size_t>((apWritePos - delaySamples) & kAllpassMask)];
+            float v = input - coefficient * delayed;
+            float output = coefficient * v + delayed;
+            delayLine[static_cast<size_t>(apWritePos & kAllpassMask)] = v;
+            apWritePos = (apWritePos + 1) & kAllpassMask;
+            return output;
+        }
+
+        void reset()
+        {
+            delayLine.fill(0.0f);
+            apWritePos = 0;
+        }
+    };
+
+    // --- Soft clipper ---
+    static float softClip(float input) { return std::tanh(input); }
+
+    // --- Feedback path components (per channel) ---
+    std::array<DCBlocker, 2> dcBlocker;
+    std::array<OnePoleFilter, 2> feedbackHP;
+    std::array<OnePoleFilter, 2> feedbackLP;
+
+    // Smoothed feedback gain
+    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> smoothedFeedback;
+
+    // --- Allpass diffusion network (4 stages x 2 channels) ---
+    static constexpr int kNumAllpassStages = 4;
+    std::array<std::array<AllpassStage, kNumAllpassStages>, 2> allpassNetwork;
+
+    // Base allpass delay times at 48kHz (prime numbers)
+    static constexpr int kAllpassDelays48k[4] = { 113, 337, 601, 1009 };
+
+    // Process diffusion network for one sample (both channels)
+    void processDiffusion(float& sampleL, float& sampleR, float diffusionAmount);
+
+    // --- Grain seed counter for deterministic hashing ---
+    uint32_t grainSeedCounter = 0;
+
+    // --- Cached parameter pointers for Phase 4.2 ---
+    std::atomic<float>* feedbackParam   = nullptr;
+    std::atomic<float>* diffusionParam  = nullptr;
+    std::atomic<float>* stereoSpreadParam = nullptr;
+    std::atomic<float>* detuneParam     = nullptr;
+    std::atomic<float>* lowCutParam     = nullptr;
+    std::atomic<float>* highCutParam    = nullptr;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(FractureProcessor)
 };

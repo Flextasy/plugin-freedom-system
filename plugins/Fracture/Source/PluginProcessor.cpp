@@ -8,11 +8,19 @@ FractureProcessor::FractureProcessor()
       parameters(*this, nullptr, "PARAMETERS", createParameterLayout())
 {
     // Cache raw parameter pointers (thread-safe atomic reads in processBlock)
-    delayTimeParam  = parameters.getRawParameterValue("delay_time");
-    grainSizeParam  = parameters.getRawParameterValue("grain_size");
-    grainRateParam  = parameters.getRawParameterValue("grain_rate");
-    grainShapeParam = parameters.getRawParameterValue("grain_shape");
-    dryWetParam     = parameters.getRawParameterValue("dry_wet");
+    delayTimeParam    = parameters.getRawParameterValue("delay_time");
+    grainSizeParam    = parameters.getRawParameterValue("grain_size");
+    grainRateParam    = parameters.getRawParameterValue("grain_rate");
+    grainShapeParam   = parameters.getRawParameterValue("grain_shape");
+    dryWetParam       = parameters.getRawParameterValue("dry_wet");
+
+    // Phase 4.2 parameter pointers
+    feedbackParam     = parameters.getRawParameterValue("feedback");
+    diffusionParam    = parameters.getRawParameterValue("diffusion");
+    stereoSpreadParam = parameters.getRawParameterValue("stereo_spread");
+    detuneParam       = parameters.getRawParameterValue("detune");
+    lowCutParam       = parameters.getRawParameterValue("low_cut");
+    highCutParam      = parameters.getRawParameterValue("high_cut");
 }
 
 FractureProcessor::~FractureProcessor()
@@ -268,7 +276,8 @@ float FractureProcessor::applyWindow(float phase, uint8_t windowType, int length
 // Phase 4.1: Grain Spawning
 // =============================================================================
 
-void FractureProcessor::spawnGrain(int grainLengthSamples, uint8_t windowType)
+void FractureProcessor::spawnGrain(int grainLengthSamples, uint8_t windowType,
+                                   float spreadAmount, float detuneCents)
 {
     // Find an inactive grain slot
     int slotIndex = -1;
@@ -298,18 +307,58 @@ void FractureProcessor::spawnGrain(int grainLengthSamples, uint8_t windowType)
     if (slotIndex < 0)
         return; // Should never happen with the stealing logic above
 
+    // Deterministic hash for this grain (Knuth multiplicative hash)
+    uint32_t seed = grainSeedCounter++;
+    uint32_t hash = seed * 2654435761u;
+
     auto& grain = grainPool[static_cast<size_t>(slotIndex)];
     grain.active = true;
     grain.startReadPos = writePos;  // Read from current write position
     grain.lengthSamples = juce::jmax(1, grainLengthSamples);
     grain.currentSample = 0;
-    grain.playbackRate = 1.0f;      // Phase 4.1: no pitch shift
-    grain.panL = 1.0f;              // Phase 4.1: center (mono)
-    grain.panR = 1.0f;
     grain.windowType = windowType;
-    grain.isReversed = false;       // Phase 4.1: forward only
+    grain.isReversed = false;       // Phase 4.1: forward only (Phase 4.3 will add reverse)
     grain.mutationPass = 0;
     grain.phase = 0.0f;
+
+    // --- Phase 4.2: Stereo Spread ---
+    // spreadAmount: 0.0 = center, 1.0 = full stereo
+    // Hash gives a value 0..UINT32_MAX, map to pan angle
+    float panNorm = static_cast<float>(hash & 0xFFFFu) / 65535.0f;  // 0.0 to 1.0
+    float panAngle = (0.5f + (panNorm - 0.5f) * spreadAmount)       // Scale around center
+                     * (juce::MathConstants<float>::pi * 0.5f);      // Map to 0..pi/2
+    grain.panL = std::cos(panAngle);
+    grain.panR = std::sin(panAngle);
+
+    // --- Phase 4.2: Detune ---
+    // detuneCents: ± range in cents. Random within range per grain.
+    // Use upper 16 bits of hash for detune randomization
+    float detuneNorm = static_cast<float>((hash >> 16) & 0xFFFFu) / 65535.0f; // 0.0 to 1.0
+    float centsOffset = (detuneNorm * 2.0f - 1.0f) * detuneCents;  // -detuneCents to +detuneCents
+    grain.playbackRate = std::pow(2.0f, centsOffset / 1200.0f);
+}
+
+// =============================================================================
+// Phase 4.2: Diffusion Network
+// =============================================================================
+
+void FractureProcessor::processDiffusion(float& sampleL, float& sampleR, float diffusionAmount)
+{
+    // Bypass when diffusion is negligible
+    if (diffusionAmount < 0.05f)
+        return;
+
+    // Coefficient: diffusionAmount * 0.75 (max coefficient = 0.75 at 100%)
+    float coeff = diffusionAmount * 0.75f;
+
+    // Process 4 cascaded allpass stages per channel
+    for (int stage = 0; stage < kNumAllpassStages; ++stage)
+    {
+        allpassNetwork[0][static_cast<size_t>(stage)].coefficient = coeff;
+        allpassNetwork[1][static_cast<size_t>(stage)].coefficient = coeff;
+        sampleL = allpassNetwork[0][static_cast<size_t>(stage)].process(sampleL);
+        sampleR = allpassNetwork[1][static_cast<size_t>(stage)].process(sampleR);
+    }
 }
 
 // =============================================================================
@@ -342,6 +391,44 @@ void FractureProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     // Initialize smoothed dry/wet (20ms ramp)
     smoothedDryWet.reset(sampleRate, 0.020);
     smoothedDryWet.setCurrentAndTargetValue(dryWetParam->load() * 0.01f);
+
+    // =========================================================================
+    // Phase 4.2: Initialize feedback & character components
+    // =========================================================================
+
+    // Smoothed feedback gain (20ms ramp)
+    smoothedFeedback.reset(sampleRate, 0.020);
+    smoothedFeedback.setCurrentAndTargetValue(feedbackParam->load() * 0.01f);
+
+    // DC blockers
+    for (auto& dc : dcBlocker)
+        dc.reset();
+
+    // Feedback filters (initialize with current parameter values)
+    float lowCutHz  = lowCutParam->load();
+    float highCutHz = highCutParam->load();
+    for (int ch = 0; ch < 2; ++ch)
+    {
+        feedbackHP[static_cast<size_t>(ch)].reset();
+        feedbackLP[static_cast<size_t>(ch)].reset();
+        feedbackHP[static_cast<size_t>(ch)].setLowpass(lowCutHz, static_cast<float>(sampleRate));
+        feedbackLP[static_cast<size_t>(ch)].setLowpass(highCutHz, static_cast<float>(sampleRate));
+    }
+
+    // Allpass diffusion network: scale delay times for current sample rate
+    float srRatio = static_cast<float>(sampleRate) / 48000.0f;
+    for (int ch = 0; ch < 2; ++ch)
+    {
+        for (int stage = 0; stage < kNumAllpassStages; ++stage)
+        {
+            int scaledDelay = juce::jmax(1, static_cast<int>(
+                static_cast<float>(kAllpassDelays48k[stage]) * srRatio));
+            allpassNetwork[static_cast<size_t>(ch)][static_cast<size_t>(stage)].init(scaledDelay);
+        }
+    }
+
+    // Reset grain seed counter
+    grainSeedCounter = 0;
 }
 
 void FractureProcessor::releaseResources()
@@ -373,6 +460,14 @@ void FractureProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
     const int   grainShapeIdx = static_cast<int>(grainShapeParam->load());
     const float dryWetPct     = dryWetParam->load();
 
+    // Phase 4.2 parameters
+    const float feedbackPct   = feedbackParam->load();
+    const float diffusionPct  = diffusionParam->load();
+    const float spreadPct     = stereoSpreadParam->load();
+    const float detuneCents   = detuneParam->load();
+    const float lowCutHz      = lowCutParam->load();
+    const float highCutHz     = highCutParam->load();
+
     const float sr = static_cast<float>(currentSampleRate);
 
     // Convert parameters to sample-domain values
@@ -381,8 +476,22 @@ void FractureProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
     const float samplesPerGrain = (grainRateHz > 0.0f) ? (sr / grainRateHz) : sr;
     const uint8_t windowType   = static_cast<uint8_t>(juce::jlimit(0, 3, grainShapeIdx));
 
-    // Set smoothed dry/wet target (parameter is 0-100%)
+    // Phase 4.2: derived values
+    const float spreadAmount   = spreadPct * 0.01f;       // 0.0 to 1.0
+    const float diffusionAmt   = diffusionPct * 0.01f;    // 0.0 to 1.0
+    // Feedback: 0-120% param, cap at 115% (1.15f)
+    const float feedbackTarget = juce::jmin(feedbackPct * 0.01f, 1.15f);
+
+    // Set smoothed parameter targets
     smoothedDryWet.setTargetValue(dryWetPct * 0.01f);
+    smoothedFeedback.setTargetValue(feedbackTarget);
+
+    // Update feedback filter coefficients (block-rate is fine for 1-pole)
+    for (int ch = 0; ch < 2; ++ch)
+    {
+        feedbackHP[static_cast<size_t>(ch)].setLowpass(lowCutHz, sr);
+        feedbackLP[static_cast<size_t>(ch)].setLowpass(highCutHz, sr);
+    }
 
     // Get buffer write pointers
     float* channelData[2] = { nullptr, nullptr };
@@ -392,22 +501,23 @@ void FractureProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
     // --- Per-sample processing ---
     for (int samp = 0; samp < numSamples; ++samp)
     {
-        // (a) Update smoothed params
-        const float mixAmount = smoothedDryWet.getNextValue();
+        // (1) Update smoothed params
+        const float mixAmount    = smoothedDryWet.getNextValue();
+        const float feedbackGain = smoothedFeedback.getNextValue();
 
-        // Capture dry input before it gets overwritten
+        // (2) Capture dry input
         float dryL = channelData[0][samp];
         float dryR = (numChannels > 1) ? channelData[1][samp] : dryL;
 
-        // (b) Grain scheduler: accumulate and spawn
+        // (3) Grain scheduler: accumulate and spawn (with stereo spread + detune)
         grainAccumulator += 1.0f;
         if (grainAccumulator >= samplesPerGrain)
         {
             grainAccumulator -= samplesPerGrain;
-            spawnGrain(grainLenSamples, windowType);
+            spawnGrain(grainLenSamples, windowType, spreadAmount, detuneCents);
         }
 
-        // (c) Process all active grains - sum their outputs
+        // (4) Process all active grains - sum their outputs (with playback rate for detune)
         float wetL = 0.0f;
         float wetR = 0.0f;
 
@@ -416,23 +526,29 @@ void FractureProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
             if (!grain.active)
                 continue;
 
-            // Calculate phase (0.0 to 1.0)
-            grain.phase = static_cast<float>(grain.currentSample) / static_cast<float>(grain.lengthSamples);
+            // Calculate phase (0.0 to 1.0) using fractional position for detuned grains
+            float fractionalPos = static_cast<float>(grain.currentSample) * grain.playbackRate;
+            grain.phase = fractionalPos / static_cast<float>(grain.lengthSamples);
 
-            // Compute read delay: the grain was spawned when writePos was at startReadPos.
-            // Now writePos has advanced. The grain wants to read from
-            // (startReadPos - delaySamples + currentSample) in the buffer,
-            // expressed as a delay from the current writePos.
+            // Check if grain has finished (fractional position exceeds length)
+            if (grain.phase >= 1.0f)
+            {
+                grain.active = false;
+                continue;
+            }
+
+            // Compute read delay using fractional position for detuned playback
             int samplesSinceSpawn = (writePos - grain.startReadPos + kBufferSize) & kBufferMask;
             float readDelay = static_cast<float>(samplesSinceSpawn) + delaySamples
-                              - static_cast<float>(grain.currentSample);
+                              - fractionalPos;
 
             // Clamp to valid range (need at least 1 sample for Hermite, max buffer-4)
             readDelay = juce::jlimit(1.0f, static_cast<float>(kBufferSize - 4), readDelay);
 
-            // Apply window envelope
+            // Apply window envelope (use integer approximation of fractional position)
+            int fractionalPosInt = static_cast<int>(fractionalPos);
             float envelope = applyWindow(grain.phase, grain.windowType,
-                                         grain.lengthSamples, grain.currentSample);
+                                         grain.lengthSamples, fractionalPosInt);
 
             // Read from delay buffer and apply envelope + pan
             for (int ch = 0; ch < numChannels; ++ch)
@@ -446,23 +562,40 @@ void FractureProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
                     wetR += grainOut * grain.panR;
             }
 
-            // Advance grain playback position
+            // Advance grain playback position (integer counter, fractional handled by playbackRate)
             grain.currentSample++;
-            if (grain.currentSample >= grain.lengthSamples)
-                grain.active = false;
         }
 
-        // (d) Dry/wet mix
+        // (5) Apply diffusion to wet signal
+        processDiffusion(wetL, wetR, diffusionAmt);
+
+        // (6) Dry/wet mix
         channelData[0][samp] = dryL * (1.0f - mixAmount) + wetL * mixAmount;
         if (numChannels > 1)
             channelData[1][samp] = dryR * (1.0f - mixAmount) + wetR * mixAmount;
 
-        // (e) Write original dry input to delay buffer
-        delayBuffer[0][static_cast<size_t>(writePos)] = dryL;
-        if (numChannels > 1)
-            delayBuffer[1][static_cast<size_t>(writePos)] = dryR;
+        // (7) Feedback path: wet → soft clip → DC block → HP → LP → gain
+        float fbL = softClip(wetL);
+        float fbR = softClip(wetR);
 
-        // (f) Advance buffer write pointer
+        fbL = dcBlocker[0].process(fbL);
+        fbR = dcBlocker[1].process(fbR);
+
+        fbL = feedbackHP[0].processHighpass(fbL);
+        fbR = feedbackHP[1].processHighpass(fbR);
+
+        fbL = feedbackLP[0].processLowpass(fbL);
+        fbR = feedbackLP[1].processLowpass(fbR);
+
+        fbL *= feedbackGain;
+        fbR *= feedbackGain;
+
+        // (8) Write to buffer: input + feedback
+        delayBuffer[0][static_cast<size_t>(writePos)] = dryL + fbL;
+        if (numChannels > 1)
+            delayBuffer[1][static_cast<size_t>(writePos)] = dryR + fbR;
+
+        // (9) Advance buffer write pointer
         writePos = (writePos + 1) & kBufferMask;
     }
 }
