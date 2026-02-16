@@ -905,6 +905,10 @@ import { getSliderState, getToggleState, getComboBoxState } from './js/juce/inde
     activeKnob = knob;
     knob.classList.add('dragging');
     lastY = e.clientY;
+    // Signal drag start to DAW for automation gesture grouping
+    const paramId = knob.dataset.param;
+    const state = sliderStates[paramId];
+    if (state) state.sliderDragStarted();
   });
 
   document.addEventListener('mousemove', e => {
@@ -959,6 +963,10 @@ import { getSliderState, getToggleState, getComboBoxState } from './js/juce/inde
       dragging = true;
       lastX = e.clientX;
       el.closest('.filter-group').classList.add('dragging');
+      // Signal drag start to DAW for automation gesture grouping
+      const paramId = el.dataset.param;
+      const startState = sliderStates[paramId];
+      if (startState) startState.sliderDragStarted();
 
       const onMove = ev => {
         if (!dragging) return;
