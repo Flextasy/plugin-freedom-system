@@ -42,7 +42,7 @@
 | PadForge | 💡 Ideated | - | Synth (Instrument) | 2025-11-14 |
 | AngelGrain | 📦 Installed | 1.0.0 | Audio Effect (Granular Delay) | 2025-11-19 |
 | Prism | 💡 Ideated | - | Audio Effect (Granular Delay / Spectral) | 2026-02-12 |
-| Fracture | 🚧 Stage 2 | - | Audio Effect (Granular Delay) | 2026-02-15 |
+| Fracture | 🚧 Stage 5.1 | - | Audio Effect (Granular Delay) | 2026-02-16 |
 
 **For detailed plugin information (lifecycle timeline, known issues, parameters, etc.), see:**
 `plugins/[PluginName]/NOTES.md`
