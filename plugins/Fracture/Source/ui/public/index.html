@@ -198,7 +198,11 @@
     height: 48px;
     position: relative;
     cursor: grab;
+    border-radius: 50%;
+    transition: box-shadow 0.2s ease;
   }
+  .knob-container:hover { box-shadow: 0 0 10px var(--accent-hover); }
+  .knob-container.dragging { box-shadow: 0 0 14px var(--accent-drag); cursor: grabbing; }
   .knob-container:active { cursor: grabbing; }
   .knob-container.large { width: 56px; height: 56px; }
 
@@ -248,7 +252,7 @@
     color: #d0d0d8;
     pointer-events: none;
     opacity: 0;
-    transition: opacity 0.15s;
+    transition: opacity 0.15s, color 0.15s;
     white-space: nowrap;
     text-shadow: 0 1px 3px rgba(0,0,0,0.5);
   }
@@ -424,7 +428,9 @@
     position: relative;
     cursor: pointer;
     border: 1px solid rgba(255,255,255,0.04);
+    transition: border-color 0.15s;
   }
+  .filter-slider:hover { border-color: rgba(58,142,214,0.2); }
   .filter-fill {
     position: absolute;
     top: 0;
@@ -707,6 +713,11 @@ import { getSliderState, getToggleState, getComboBoxState } from './js/juce/inde
   });
 
   // ============================================================
+  // Sync division names (used by display + combo boxes)
+  // ============================================================
+  const divisions = ['1/1','1/1D','1/1T','1/2','1/2D','1/2T','1/4','1/4D','1/4T','1/8','1/8D','1/8T','1/16','1/16D','1/16T','1/32','1/32D','1/32T'];
+
+  // ============================================================
   // Display value formatting helpers
   // ============================================================
 
@@ -803,6 +814,8 @@ import { getSliderState, getToggleState, getComboBoxState } from './js/juce/inde
     norm = Math.max(0, Math.min(1, norm));
     const angle = ARC_START + norm * ARC_SWEEP;
 
+    const danger = !bipolar && warnNorm !== null && norm > warnNorm;
+
     let html = '';
     html += `<path d="${describeArc(cx, cy, r, ARC_START, ARC_END)}" class="knob-track"/>`;
 
@@ -814,7 +827,6 @@ import { getSliderState, getToggleState, getComboBoxState } from './js/juce/inde
         html += `<path d="${describeArc(cx, cy, r, angle, centerAngle)}" class="knob-fill" style="stroke:${color}; filter:drop-shadow(0 0 4px ${color}55);"/>`;
       }
     } else {
-      const danger = warnNorm !== null && norm > warnNorm;
       if (norm > 0.005) {
         const fillEnd = ARC_START + Math.max(norm, 0.01) * ARC_SWEEP;
         html += `<path d="${describeArc(cx, cy, r, ARC_START, fillEnd)}" class="knob-fill${danger ? ' danger' : ''}" style="${danger ? '' : 'stroke:' + color + '; filter:drop-shadow(0 0 4px ' + color + '55);'}"/>`;
@@ -831,7 +843,25 @@ import { getSliderState, getToggleState, getComboBoxState } from './js/juce/inde
 
     // Update value display
     const display = el.querySelector('.knob-value');
-    if (display) display.textContent = formatParam(paramId, norm);
+    if (display) {
+      // When synced, show division name instead of ms/Hz
+      let text = formatParam(paramId, norm);
+      if (paramId === 'delay_time' && toggleStates['delay_sync_toggle'] && toggleStates['delay_sync_toggle'].getValue()) {
+        const idx = comboStates['delay_sync_division'] ? comboStates['delay_sync_division'].getIndex() : 6;
+        text = divisions[idx] || '1/4';
+      } else if (paramId === 'grain_rate' && toggleStates['grain_rate_sync_toggle'] && toggleStates['grain_rate_sync_toggle'].getValue()) {
+        const idx = comboStates['grain_rate_sync_division'] ? comboStates['grain_rate_sync_division'].getIndex() : 9;
+        text = divisions[idx] || '1/8';
+      }
+      display.textContent = text;
+
+      // Feedback warning: color value label red when in danger zone
+      if (danger) {
+        display.style.color = '#e83030';
+      } else {
+        display.style.color = '';
+      }
+    }
   }
 
   // ============================================================
@@ -864,6 +894,12 @@ import { getSliderState, getToggleState, getComboBoxState } from './js/juce/inde
   document.querySelectorAll('.knob-container').forEach(el => {
     const paramId = el.dataset.param;
     const state = sliderStates[paramId];
+
+    // Set accent glow CSS custom properties from data-color
+    const color = el.dataset.color || '#888888';
+    el.style.setProperty('--accent-hover', color + '33');
+    el.style.setProperty('--accent-drag', color + '44');
+
     if (!state) return;
 
     // Initial render
@@ -1065,10 +1101,23 @@ import { getSliderState, getToggleState, getComboBoxState } from './js/juce/inde
   initSyncToggle('delaySyncBtn', 'delaySyncCombo', 'delay_sync_toggle');
   initSyncToggle('grainRateSyncBtn', 'grainRateSyncCombo', 'grain_rate_sync_toggle');
 
+  // Re-render knob value display when sync state or division changes
+  function refreshKnobDisplay(paramId) {
+    const el = document.getElementById('knob-' + paramId);
+    const state = sliderStates[paramId];
+    if (el && state) renderKnobAtNorm(el, state.getNormalisedValue());
+  }
+
+  if (toggleStates['delay_sync_toggle']) {
+    toggleStates['delay_sync_toggle'].valueChangedEvent.addListener(() => refreshKnobDisplay('delay_time'));
+  }
+  if (toggleStates['grain_rate_sync_toggle']) {
+    toggleStates['grain_rate_sync_toggle'].valueChangedEvent.addListener(() => refreshKnobDisplay('grain_rate'));
+  }
+
   // ============================================================
   // COMBO BOXES (Choice params - getComboBoxState)
   // ============================================================
-  const divisions = ['1/1','1/1D','1/1T','1/2','1/2D','1/2T','1/4','1/4D','1/4T','1/8','1/8D','1/8T','1/16','1/16D','1/16T','1/32','1/32D','1/32T'];
 
   function initCombo(btnId, dropdownId, stateKey, optClass) {
     const btn = document.getElementById(btnId);
@@ -1114,6 +1163,14 @@ import { getSliderState, getToggleState, getComboBoxState } from './js/juce/inde
 
   initCombo('delayComboBtn', 'delayComboDropdown', 'delay_sync_division', 'delay-opt');
   initCombo('grainRateComboBtn', 'grainRateComboDropdown', 'grain_rate_sync_division', 'grain-opt');
+
+  // Refresh knob value when division changes (to update displayed division name)
+  if (comboStates['delay_sync_division']) {
+    comboStates['delay_sync_division'].valueChangedEvent.addListener(() => refreshKnobDisplay('delay_time'));
+  }
+  if (comboStates['grain_rate_sync_division']) {
+    comboStates['grain_rate_sync_division'].valueChangedEvent.addListener(() => refreshKnobDisplay('grain_rate'));
+  }
 
   // Close dropdowns on outside click
   document.addEventListener('click', () => {
