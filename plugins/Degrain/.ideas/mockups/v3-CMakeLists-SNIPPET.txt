@@ -1,0 +1,92 @@
+# Degrain — CMakeLists.txt WebView Configuration Snippet
+# Generated: 2026-02-14
+# Add this to your existing CMakeLists.txt for Degrain plugin
+
+# ==============================================================================
+# WEBVIEW CONFIGURATION
+# ==============================================================================
+
+# 1. Add HTML to BinaryData
+# ---------------------------
+# Embed the UI HTML file into the plugin binary
+juce_add_binary_data(DegrainBinaryData
+    SOURCES
+        Source/ui/public/index.html
+)
+
+# 2. Link GUI Extra Module
+# --------------------------
+# Required for WebBrowserComponent
+target_link_libraries(Degrain
+    PRIVATE
+        juce::juce_audio_processors
+        juce::juce_gui_extra        # <-- WebView support
+        DegrainBinaryData
+)
+
+# 3. Enable WebView Backend
+# ---------------------------
+# Platform-specific WebView configuration
+
+if(APPLE)
+    # macOS: Use WebKit
+    target_compile_definitions(Degrain
+        PUBLIC
+            JUCE_WEB_BROWSER=1
+            JUCE_USE_CURL=0
+    )
+elseif(WIN32)
+    # Windows: Use WebView2
+    # Requires Microsoft Edge WebView2 Runtime (shipped with Windows 11+)
+    target_compile_definitions(Degrain
+        PUBLIC
+            JUCE_WEB_BROWSER=1
+            JUCE_USE_CURL=0
+    )
+    # WebView2 SDK is automatically downloaded by JUCE (no manual setup needed)
+elseif(UNIX AND NOT APPLE)
+    # Linux: Use WebKit2GTK
+    # Users must install webkit2gtk-4.0 package
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(WEBKIT2 REQUIRED webkit2gtk-4.0)
+
+    target_compile_definitions(Degrain
+        PUBLIC
+            JUCE_WEB_BROWSER=1
+            JUCE_USE_CURL=0
+    )
+
+    target_include_directories(Degrain PRIVATE ${WEBKIT2_INCLUDE_DIRS})
+    target_link_libraries(Degrain PRIVATE ${WEBKIT2_LIBRARIES})
+endif()
+
+# ==============================================================================
+# USAGE NOTES
+# ==============================================================================
+#
+# Directory Structure:
+#   Source/
+#     PluginEditor.h
+#     PluginEditor.cpp
+#     PluginProcessor.h
+#     PluginProcessor.cpp
+#     ui/
+#       public/
+#         index.html  <-- Embedded WebView UI (copy from .ideas/mockups/v3-ui.html)
+#
+# Build:
+#   cmake -B build
+#   cmake --build build
+#
+# Testing:
+#   - macOS: Open Degrain.vst3 in DAW (Logic, Ableton, etc.)
+#   - Windows: Open Degrain.vst3 in DAW (Cubase, FL Studio, etc.)
+#   - Linux: Open Degrain.vst3 in DAW (Reaper, Bitwig, etc.)
+#            Requires: sudo apt install webkit2gtk-4.0
+#
+# Troubleshooting:
+#   - If WebView fails to load, check CMake output for linking errors
+#   - On Windows, ensure WebView2 Runtime is installed (bundled with Windows 11+)
+#   - On Linux, verify webkit2gtk-4.0 is installed: pkg-config --modversion webkit2gtk-4.0
+#
+# ==============================================================================
