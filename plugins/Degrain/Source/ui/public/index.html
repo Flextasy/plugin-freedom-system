@@ -687,6 +687,13 @@
         <div class="sync-row">
           <button class="sync-btn delay-sync" id="delaySyncBtn">SYNC</button>
         </div>
+        <div class="knob-group">
+          <div class="knob-container" id="knob-delay_ratio" data-param="delay_ratio" data-color="#e85d3a">
+            <svg class="knob-svg" viewBox="0 0 48 48"></svg>
+            <div class="knob-value"></div>
+          </div>
+          <div class="knob-label">Ratio</div>
+        </div>
       </div>
     </div>
 
@@ -814,7 +821,8 @@ import { getSliderState, getToggleState, getComboBoxState } from './js/juce/inde
   const sliderParams = [
     'delay_time', 'grain_size', 'grain_rate', 'feedback', 'diffusion',
     'stereo_spread', 'detune', 'low_cut', 'high_cut',
-    'reverse_mix', 'grain_mutation', 'freq_spread', 'grain_random', 'dry_wet', 'output_gain'
+    'reverse_mix', 'grain_mutation', 'freq_spread', 'grain_random', 'dry_wet', 'output_gain',
+    'delay_ratio'
   ];
 
   const sliderStates = {};
@@ -863,7 +871,8 @@ import { getSliderState, getToggleState, getComboBoxState } from './js/juce/inde
     freq_spread:   { min: 0,    max: 100,   unit: '%'               },
     grain_random:  { min: 0,    max: 100,   unit: '%'               },
     dry_wet:       { min: 0,    max: 100,   unit: '%'               },
-    output_gain:   { min: -24,  max: 12,    unit: 'dB'              }
+    output_gain:   { min: -24,  max: 12,    unit: 'dB'              },
+    delay_ratio:   { min: 0,    max: 100,   unit: 'ratio'           }
   };
 
   function normToValue(paramId, norm) {
@@ -900,6 +909,11 @@ import { getSliderState, getToggleState, getComboBoxState } from './js/juce/inde
     const info = paramDisplayInfo[paramId];
     if (!info) return Math.round(norm * 100) + '%';
     const val = normToValue(paramId, norm);
+    // Ratio knob shows the grains/delay split, e.g. 50/50, 99/1
+    if (paramId === 'delay_ratio') {
+      const g = Math.round(val);
+      return g + '/' + (100 - g);
+    }
     return formatVal(val, info.unit);
   }
 

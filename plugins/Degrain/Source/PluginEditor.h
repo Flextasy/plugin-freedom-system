@@ -35,6 +35,7 @@ private:
     std::unique_ptr<juce::WebSliderRelay> grainRandomRelay;
     std::unique_ptr<juce::WebSliderRelay> dryWetRelay;
     std::unique_ptr<juce::WebSliderRelay> outputGainRelay;
+    std::unique_ptr<juce::WebSliderRelay> delayRatioRelay;
 
     // Bool params (5) - WebToggleButtonRelay
     std::unique_ptr<juce::WebToggleButtonRelay> delaySyncToggleRelay;
@@ -68,6 +69,7 @@ private:
     std::unique_ptr<juce::WebSliderParameterAttachment> grainRandomAttachment;
     std::unique_ptr<juce::WebSliderParameterAttachment> dryWetAttachment;
     std::unique_ptr<juce::WebSliderParameterAttachment> outputGainAttachment;
+    std::unique_ptr<juce::WebSliderParameterAttachment> delayRatioAttachment;
 
     // Bool attachments (5)
     std::unique_ptr<juce::WebToggleButtonParameterAttachment> delaySyncToggleAttachment;

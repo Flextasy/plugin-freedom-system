@@ -23,6 +23,7 @@ DegrainEditor::DegrainEditor(DegrainProcessor& p)
     grainRandomRelay     = std::make_unique<juce::WebSliderRelay>("grain_random");
     dryWetRelay          = std::make_unique<juce::WebSliderRelay>("dry_wet");
     outputGainRelay      = std::make_unique<juce::WebSliderRelay>("output_gain");
+    delayRatioRelay      = std::make_unique<juce::WebSliderRelay>("delay_ratio");
 
     // Bool params (5)
     delaySyncToggleRelay     = std::make_unique<juce::WebToggleButtonRelay>("delay_sync_toggle");
@@ -58,6 +59,7 @@ DegrainEditor::DegrainEditor(DegrainProcessor& p)
             .withOptionsFrom(*grainRandomRelay)
             .withOptionsFrom(*dryWetRelay)
             .withOptionsFrom(*outputGainRelay)
+            .withOptionsFrom(*delayRatioRelay)
             // Bool relays
             .withOptionsFrom(*delaySyncToggleRelay)
             .withOptionsFrom(*grainRateSyncToggleRelay)
@@ -89,6 +91,7 @@ DegrainEditor::DegrainEditor(DegrainProcessor& p)
     grainRandomAttachment  = std::make_unique<juce::WebSliderParameterAttachment>(*apvts.getParameter("grain_random"),  *grainRandomRelay,  nullptr);
     dryWetAttachment       = std::make_unique<juce::WebSliderParameterAttachment>(*apvts.getParameter("dry_wet"),       *dryWetRelay,       nullptr);
     outputGainAttachment   = std::make_unique<juce::WebSliderParameterAttachment>(*apvts.getParameter("output_gain"),   *outputGainRelay,   nullptr);
+    delayRatioAttachment   = std::make_unique<juce::WebSliderParameterAttachment>(*apvts.getParameter("delay_ratio"),   *delayRatioRelay,   nullptr);
 
     // Bool attachments (5)
     delaySyncToggleAttachment     = std::make_unique<juce::WebToggleButtonParameterAttachment>(*apvts.getParameter("delay_sync_toggle"),      *delaySyncToggleRelay,     nullptr);

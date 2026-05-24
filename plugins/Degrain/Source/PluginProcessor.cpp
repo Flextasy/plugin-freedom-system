@@ -31,6 +31,7 @@ DegrainProcessor::DegrainProcessor()
     freezeParam              = parameters.getRawParameterValue("freeze");
     delaySyncToggleParam     = parameters.getRawParameterValue("delay_sync_toggle");
     delaySyncDivParam        = parameters.getRawParameterValue("delay_sync_division");
+    delayRatioParam          = parameters.getRawParameterValue("delay_ratio");
     grainRateSyncToggleParam = parameters.getRawParameterValue("grain_rate_sync_toggle");
     grainRateSyncDivParam    = parameters.getRawParameterValue("grain_rate_sync_division");
     delayOnParam             = parameters.getRawParameterValue("delay_on");
@@ -67,6 +68,16 @@ juce::AudioProcessorValueTreeState::ParameterLayout DegrainProcessor::createPara
                           "1/4", "1/4D", "1/4T", "1/8", "1/8D", "1/8T",
                           "1/16", "1/16D", "1/16T", "1/32", "1/32D", "1/32T"},
         6)); // Default: 1/4
+
+    // Grain/Delay balance: 0% = all delay, 100% = all grains, 50% = equal.
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID{"delay_ratio", 1},
+        "Ratio",
+        juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f),
+        50.0f,
+        juce::String(),
+        juce::AudioProcessorParameter::genericParameter,
+        [](float value, int) { int g = juce::roundToInt(value); return juce::String(g) + "/" + juce::String(100 - g); }));
 
     // GRAIN SECTION
     layout.add(std::make_unique<juce::AudioParameterFloat>(
@@ -620,6 +631,10 @@ void DegrainProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     smoothedDiffusion.reset(sampleRate, 0.020);
     smoothedDiffusion.setCurrentAndTargetValue(diffusionParam->load() * 0.01f);
 
+    // Smoothed grain/delay balance (20ms ramp - click-free crossfade)
+    smoothedRatio.reset(sampleRate, 0.020);
+    smoothedRatio.setCurrentAndTargetValue(delayRatioParam->load() * 0.01f);
+
     // DC blockers
     for (auto& dc : dcBlocker)
         dc.reset();
@@ -836,6 +851,7 @@ void DegrainProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
     smoothedDryWet.setTargetValue(dryWetPct * 0.01f);
     smoothedFeedback.setTargetValue(feedbackTarget);
     smoothedDiffusion.setTargetValue(diffusionAmt);
+    smoothedRatio.setTargetValue(delayRatioParam->load() * 0.01f);
 
     // Update feedback and wet filter coefficients (block-rate)
     for (int ch = 0; ch < 2; ++ch)
@@ -1080,8 +1096,20 @@ void DegrainProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
         //     dryGain also gated by freezeGain (fades to 0 when frozen).
         const float dryGain = std::cos(mixAmount * juce::MathConstants<float>::halfPi);
         const float wetGain = std::sin(mixAmount * juce::MathConstants<float>::halfPi);
-        float outL = dryL * freezeGain * dryGain + (wetL + delayOutL) * wetGain * outputGain;
-        float outR = dryR * freezeGain * dryGain + (wetR + delayOutR) * wetGain * outputGain;
+
+        // Grain/Delay balance (Ratio, equal-power). 0 = all delay, 1 = all grains.
+        // Delay off → no delay signal, so grains pass at full level regardless.
+        const float ratio = smoothedRatio.getNextValue();
+        float grainMix = 1.0f, delayMixR = 0.0f;
+        if (delayOn)
+        {
+            grainMix  = std::sin(ratio * juce::MathConstants<float>::halfPi);
+            delayMixR = std::cos(ratio * juce::MathConstants<float>::halfPi);
+        }
+        const float wetSumL = wetL * grainMix + delayOutL * delayMixR;
+        const float wetSumR = wetR * grainMix + delayOutR * delayMixR;
+        float outL = dryL * freezeGain * dryGain + wetSumL * wetGain * outputGain;
+        float outR = dryR * freezeGain * dryGain + wetSumR * wetGain * outputGain;
 
         // Output safety: transparent below 0.9, smooth knee only above it.
         // Keeps normal-level grain output perfectly clean (no always-on tanh

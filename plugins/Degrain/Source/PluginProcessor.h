@@ -247,9 +247,12 @@ private:
             return stage2.processLowpass(stage1.processLowpass(input));
         }
 
+        // Cascade true 1-pole highpasses (monotonic, no resonant peak).
+        // NOTE: do NOT use `input - processLowpass(input)` for cascaded filters —
+        // that produces a peak near cutoff that the feedback loop self-oscillates on.
         float processHighpass(float input)
         {
-            return input - processLowpass(input);
+            return stage2.processHighpass(stage1.processHighpass(input));
         }
 
         void reset()
@@ -276,9 +279,10 @@ private:
             return stage2.processLowpass(stage1.processLowpass(input));
         }
 
+        // Cascade the two-pole highpasses → true 24 dB/oct, no resonant peak.
         float processHighpass(float input)
         {
-            return input - processLowpass(input);
+            return stage2.processHighpass(stage1.processHighpass(input));
         }
 
         void reset()
@@ -308,6 +312,9 @@ private:
 
     // Smoothed diffusion amount (prevents allpass coefficient jumps → clicks)
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> smoothedDiffusion;
+
+    // Smoothed grain/delay balance (0 = all delay, 1 = all grains)
+    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> smoothedRatio;
 
     // Exponential follower for delay time: fast start, asymptotic arrival → smooth pitch glide.
     // Unlike a linear ramp (constant speed → hard stop), exponential slows down naturally.
@@ -347,6 +354,7 @@ private:
     std::atomic<float>* freezeParam           = nullptr;
     std::atomic<float>* delaySyncToggleParam  = nullptr;
     std::atomic<float>* delaySyncDivParam     = nullptr;
+    std::atomic<float>* delayRatioParam       = nullptr;
     std::atomic<float>* grainRateSyncToggleParam = nullptr;
     std::atomic<float>* grainRateSyncDivParam    = nullptr;
 
