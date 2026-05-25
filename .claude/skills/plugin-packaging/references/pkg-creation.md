@@ -285,12 +285,12 @@ productbuild \
     --distribution Distribution.xml \
     --resources resources \
     --package-path . \
-    "${PLUGIN_NAME}-by-TACHES.pkg"
+    "${PLUGIN_NAME}-v${VERSION}-by-TACHES.pkg"
 ```
 
 Expected output:
 ```
-productbuild: Wrote product to [Name]-by-TACHES.pkg
+productbuild: Wrote product to [Name]-v[VERSION]-by-TACHES.pkg
 ```
 
 ---
@@ -306,8 +306,10 @@ mkdir -p "$DIST_DIR"
 
 ### 6b. Copy Installer
 
+Each release is saved with its version number so old releases are never overwritten:
+
 ```bash
-cp "$TEMP_DIR/${PLUGIN_NAME}-by-TACHES.pkg" "$DIST_DIR/"
+cp "$TEMP_DIR/${PLUGIN_NAME}-v${VERSION}-by-TACHES.pkg" "$DIST_DIR/"
 ```
 
 ### 6c. Generate install-readme.txt
@@ -318,7 +320,7 @@ ${PLUGIN_NAME} v${VERSION} - Installation Instructions
 ===========================================
 
 INSTALLATION:
-1. Double-click "${PLUGIN_NAME}-by-TACHES.pkg"
+1. Double-click "${PLUGIN_NAME}-v${VERSION}-by-TACHES.pkg"
 2. Follow the installation prompts
 3. The installer will copy ${PLUGIN_NAME} to your system folders:
    - VST3: ~/Library/Audio/Plug-Ins/VST3/${PRODUCT_NAME}.vst3
@@ -359,7 +361,7 @@ EOF
 ### 6d. Get File Sizes
 
 ```bash
-PKG_SIZE=$(du -h "$DIST_DIR/${PLUGIN_NAME}-by-TACHES.pkg" | cut -f1)
+PKG_SIZE=$(du -h "$DIST_DIR/${PLUGIN_NAME}-v${VERSION}-by-TACHES.pkg" | cut -f1)
 ```
 
 ### 6e. Cleanup Temp Files
@@ -373,14 +375,16 @@ rm -rf "$TEMP_DIR"
 ```
 ✓ ${PLUGIN_NAME} packaged successfully
 
-Created: plugins/${PLUGIN_NAME}/dist/${PLUGIN_NAME}-by-TACHES.pkg (${PKG_SIZE})
+Created: plugins/${PLUGIN_NAME}/dist/${PLUGIN_NAME}-v${VERSION}-by-TACHES.pkg (${PKG_SIZE})
 
 Distribution package includes:
-- ${PLUGIN_NAME}-by-TACHES.pkg (branded installer)
+- ${PLUGIN_NAME}-v${VERSION}-by-TACHES.pkg (branded installer)
 - install-readme.txt (installation guide)
 
+Previous releases (if any) are preserved in dist/ under their own version names.
+
 To share with your friend:
-1. Compress the dist/ folder to a ZIP
+1. Compress the dist/ folder to a ZIP (or just send the PKG + readme)
 2. Send via email, Dropbox, or file sharing service
 3. They double-click the PKG to install
 ```
