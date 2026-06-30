@@ -10,7 +10,7 @@ on:
       juce_ref:
         description: "JUCE git tag/branch to build against"
         required: false
-        default: "8.0.7"
+        default: "8.0.6"
 
 jobs:
   build:
