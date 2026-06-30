@@ -1,0 +1,55 @@
+name: Build DeGrain Windows Installer
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version number for the installer (e.g. 1.0.0)"
+        required: false
+        default: "1.0.0"
+      juce_ref:
+        description: "JUCE git tag/branch to build against"
+        required: false
+        default: "8.0.7"
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout plugin-freedom-system
+        uses: actions/checkout@v4
+
+      - name: Checkout JUCE
+        uses: actions/checkout@v4
+        with:
+          repository: juce-framework/JUCE
+          ref: ${{ inputs.juce_ref }}
+          path: JUCE-ci
+
+      - name: Configure CMake
+        run: cmake -S ci/windows -B build -A x64 -DJUCE_PATH="${{ github.workspace }}/JUCE-ci"
+
+      - name: Build Degrain (VST3 + Standalone)
+        run: cmake --build build --config Release --parallel
+
+      - name: Stage installer payload
+        shell: pwsh
+        run: |
+          $payload = "plugins/Degrain/installer/windows/payload"
+          New-Item -ItemType Directory -Force -Path "$payload/VST3" | Out-Null
+          New-Item -ItemType Directory -Force -Path "$payload/Standalone" | Out-Null
+          Copy-Item -Recurse -Force "build/Degrain/Degrain_artefacts/Release/VST3/Degrain.vst3" "$payload/VST3/"
+          Copy-Item -Force "build/Degrain/Degrain_artefacts/Release/Standalone/Degrain.exe" "$payload/Standalone/Degrain.exe"
+
+      - name: Compile Inno Setup installer
+        shell: pwsh
+        run: |
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          & $iscc "/DAppVersion=${{ inputs.version }}" "plugins/Degrain/installer/windows/degrain.iss"
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Degrain-Windows-Installer
+          path: plugins/Degrain/installer/windows/output/*.exe
+          if-no-files-found: error
