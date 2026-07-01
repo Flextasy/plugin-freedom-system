@@ -26,8 +26,12 @@ jobs:
           ref: ${{ inputs.juce_ref }}
           path: JUCE-ci
 
+      - name: Install WebView2 NuGet package
+        shell: pwsh
+        run: nuget install Microsoft.Web.WebView2 -Version 1.0.1901.177 -OutputDirectory "${{ github.workspace }}/webview2_packages"
+
       - name: Configure CMake
-        run: cmake -S ci/windows -B build -A x64 -DJUCE_PATH="${{ github.workspace }}/JUCE-ci"
+        run: cmake -S ci/windows -B build -A x64 -DJUCE_PATH="${{ github.workspace }}/JUCE-ci" -DJUCE_WEBVIEW2_PACKAGE_LOCATION="${{ github.workspace }}/webview2_packages"
 
       - name: Build Degrain (VST3 + Standalone)
         run: cmake --build build --config Release --parallel

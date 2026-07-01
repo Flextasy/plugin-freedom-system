@@ -10,6 +10,7 @@ juce_add_plugin(Degrain
     IS_SYNTH FALSE
     NEEDS_MIDI_INPUT TRUE
     NEEDS_WEB_BROWSER TRUE
+    NEEDS_WEBVIEW2 TRUE
 )
 
 # Source files (minimal for Stage 1)
@@ -66,3 +67,13 @@ target_compile_definitions(Degrain
         JUCE_WEB_BROWSER=1
         JUCE_USE_CURL=0
 )
+
+# Windows WebView needs the WebView2 backend (Options::withResourceProvider
+# is only compiled in when JUCE_USE_WIN_WEBVIEW2 is set). Statically linked,
+# so no runtime WebView2Loader.dll to ship. No-op on macOS.
+if(WIN32)
+    target_compile_definitions(Degrain
+        PUBLIC
+            JUCE_USE_WIN_WEBVIEW2_WITH_STATIC_LINKING=1
+    )
+endif()
