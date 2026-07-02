@@ -28,7 +28,7 @@ jobs:
 
       - name: Install WebView2 NuGet package
         shell: pwsh
-        run: nuget install Microsoft.Web.WebView2 -Version 1.0.1901.177 -OutputDirectory "${{ github.workspace }}/webview2_packages"
+        run: nuget install Microsoft.Web.WebView2 -Version 1.0.4022.49 -OutputDirectory "${{ github.workspace }}/webview2_packages"
 
       - name: Configure CMake
         run: cmake -S ci/windows -B build -A x64 -DJUCE_PATH="${{ github.workspace }}/JUCE-ci" -DJUCE_WEBVIEW2_PACKAGE_LOCATION="${{ github.workspace }}/webview2_packages"
