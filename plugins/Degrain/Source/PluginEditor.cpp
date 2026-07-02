@@ -40,6 +40,10 @@ DegrainEditor::DegrainEditor(DegrainProcessor& p)
     // 2. Create WebView with all relays registered
     webView = std::make_unique<juce::WebBrowserComponent>(
         juce::WebBrowserComponent::Options{}
+            // Default backend on Windows is legacy Internet Explorer, which can't
+            // serve the resource-provider-based navigation this UI relies on
+            // (blank/white window). Force WebView2; no-op on macOS/Linux.
+            .withBackend(juce::WebBrowserComponent::Options::Backend::webview2)
             .withNativeIntegrationEnabled()
             .withResourceProvider([this](const auto& url) { return getResource(url); })
             .withKeepPageLoadedWhenBrowserIsHidden()
