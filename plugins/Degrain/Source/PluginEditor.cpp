@@ -109,11 +109,15 @@ DegrainEditor::DegrainEditor(DegrainProcessor& p)
     grainRateSyncDivisionAttachment = std::make_unique<juce::WebComboBoxParameterAttachment>(*apvts.getParameter("grain_rate_sync_division"),  *grainRateSyncDivisionRelay, nullptr);
     grainShapeAttachment            = std::make_unique<juce::WebComboBoxParameterAttachment>(*apvts.getParameter("grain_shape"),               *grainShapeRelay,            nullptr);
 
-    // Add WebView to editor and navigate
+    // Add WebView to editor and navigate.
+    // setSize() MUST come before goToURL(): it triggers resized(), which gives
+    // the WebView real (non-zero) bounds. On Windows, WebView2 can cancel
+    // navigation ("Navigation to the webpage was cancelled") when asked to
+    // load into a still-zero-sized controller; WebKit on macOS tolerates this
+    // and just redraws later, which is why this only showed up on Windows.
     addAndMakeVisible(*webView);
-    webView->goToURL(juce::WebBrowserComponent::getResourceProviderRoot());
-
     setSize(900, 480);
+    webView->goToURL(juce::WebBrowserComponent::getResourceProviderRoot());
 }
 
 DegrainEditor::~DegrainEditor()
